@@ -60,6 +60,14 @@ export interface SystemSettings {
   ops_realtime_monitoring_enabled: boolean
   ops_query_mode_default: 'auto' | 'raw' | 'preagg' | string
   ops_metrics_interval_seconds: number
+
+  // Creem Payment Integration
+  creem_enabled: boolean
+  creem_api_key_configured: boolean
+  creem_webhook_secret_configured: boolean
+  creem_product_id: string
+  creem_rate_multiplier: number
+  creem_success_url: string
 }
 
 export interface UpdateSettingsRequest {
@@ -101,6 +109,13 @@ export interface UpdateSettingsRequest {
   ops_realtime_monitoring_enabled?: boolean
   ops_query_mode_default?: 'auto' | 'raw' | 'preagg' | string
   ops_metrics_interval_seconds?: number
+  // Creem Payment Integration
+  creem_enabled?: boolean
+  creem_api_key?: string
+  creem_webhook_secret?: string
+  creem_product_id?: string
+  creem_rate_multiplier?: number
+  creem_success_url?: string
 }
 
 /**

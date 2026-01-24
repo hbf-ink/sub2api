@@ -54,6 +54,16 @@ type SystemSettings struct {
 	OpsRealtimeMonitoringEnabled bool
 	OpsQueryModeDefault          string
 	OpsMetricsIntervalSeconds    int
+
+	// Creem 支付集成
+	CreemEnabled                  bool
+	CreemAPIKey                   string
+	CreemAPIKeyConfigured         bool
+	CreemWebhookSecret            string
+	CreemWebhookSecretConfigured  bool
+	CreemProductID                string
+	CreemRateMultiplier           float64
+	CreemSuccessURL               string
 }
 
 type PublicSettings struct {

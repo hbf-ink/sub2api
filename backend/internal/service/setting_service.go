@@ -227,6 +227,18 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 		updates[SettingKeyOpsMetricsIntervalSeconds] = strconv.Itoa(settings.OpsMetricsIntervalSeconds)
 	}
 
+	// Creem 支付集成
+	updates[SettingKeyCreemEnabled] = strconv.FormatBool(settings.CreemEnabled)
+	if settings.CreemAPIKey != "" {
+		updates[SettingKeyCreemAPIKey] = settings.CreemAPIKey
+	}
+	if settings.CreemWebhookSecret != "" {
+		updates[SettingKeyCreemWebhookSecret] = settings.CreemWebhookSecret
+	}
+	updates[SettingKeyCreemProductID] = settings.CreemProductID
+	updates[SettingKeyCreemRateMultiplier] = strconv.FormatFloat(settings.CreemRateMultiplier, 'f', 2, 64)
+	updates[SettingKeyCreemSuccessURL] = settings.CreemSuccessURL
+
 	err := s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil && s.onUpdate != nil {
 		s.onUpdate() // Invalidate cache after settings update
@@ -449,6 +461,20 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 			}
 			result.OpsMetricsIntervalSeconds = v
 		}
+	}
+
+	// Creem 支付设置
+	result.CreemEnabled = settings[SettingKeyCreemEnabled] == "true"
+	result.CreemAPIKey = settings[SettingKeyCreemAPIKey]
+	result.CreemAPIKeyConfigured = settings[SettingKeyCreemAPIKey] != ""
+	result.CreemWebhookSecret = settings[SettingKeyCreemWebhookSecret]
+	result.CreemWebhookSecretConfigured = settings[SettingKeyCreemWebhookSecret] != ""
+	result.CreemProductID = settings[SettingKeyCreemProductID]
+	result.CreemSuccessURL = settings[SettingKeyCreemSuccessURL]
+	if multiplier, err := strconv.ParseFloat(settings[SettingKeyCreemRateMultiplier], 64); err == nil && multiplier > 0 {
+		result.CreemRateMultiplier = multiplier
+	} else {
+		result.CreemRateMultiplier = 10.0 // 默认 1:10
 	}
 
 	return result
@@ -778,4 +804,56 @@ func (s *SettingService) SetStreamTimeoutSettings(ctx context.Context, settings 
 	}
 
 	return s.settingRepo.Set(ctx, SettingKeyStreamTimeoutSettings, string(data))
+}
+
+// CreemConfig Creem 支付配置
+type CreemConfig struct {
+	Enabled        bool
+	APIKey         string
+	WebhookSecret  string
+	ProductID      string
+	RateMultiplier float64
+	SuccessURL     string
+}
+
+// GetCreemConfig 获取 Creem 支付配置
+func (s *SettingService) GetCreemConfig(ctx context.Context) (*CreemConfig, error) {
+	keys := []string{
+		SettingKeyCreemEnabled,
+		SettingKeyCreemAPIKey,
+		SettingKeyCreemWebhookSecret,
+		SettingKeyCreemProductID,
+		SettingKeyCreemRateMultiplier,
+		SettingKeyCreemSuccessURL,
+	}
+
+	settings, err := s.settingRepo.GetMultiple(ctx, keys)
+	if err != nil {
+		return nil, fmt.Errorf("get creem settings: %w", err)
+	}
+
+	cfg := &CreemConfig{
+		Enabled:       settings[SettingKeyCreemEnabled] == "true",
+		APIKey:        settings[SettingKeyCreemAPIKey],
+		WebhookSecret: settings[SettingKeyCreemWebhookSecret],
+		ProductID:     settings[SettingKeyCreemProductID],
+		SuccessURL:    settings[SettingKeyCreemSuccessURL],
+	}
+
+	if multiplier, err := strconv.ParseFloat(settings[SettingKeyCreemRateMultiplier], 64); err == nil && multiplier > 0 {
+		cfg.RateMultiplier = multiplier
+	} else {
+		cfg.RateMultiplier = 10.0 // 默认 1:10
+	}
+
+	return cfg, nil
+}
+
+// IsCreemEnabled 检查是否启用 Creem 支付
+func (s *SettingService) IsCreemEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyCreemEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
 }

@@ -285,6 +285,124 @@
           </div>
         </div>
 
+        <!-- Creem Payment Settings -->
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.creem.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.creem.description') }}
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <!-- Enable Creem -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.creem.enable')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.creem.enableHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.creem_enabled" />
+            </div>
+
+            <!-- Creem Config - Only show when enabled -->
+            <div
+              v-if="form.creem_enabled"
+              class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700"
+            >
+              <!-- API Key -->
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.creem.apiKey') }}
+                </label>
+                <input
+                  v-model="form.creem_api_key"
+                  type="password"
+                  class="input font-mono text-sm"
+                  :placeholder="form.creem_api_key_configured
+                    ? t('admin.settings.creem.apiKeyConfiguredPlaceholder')
+                    : t('admin.settings.creem.apiKeyPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.creem.apiKeyHint') }}
+                </p>
+              </div>
+
+              <!-- Webhook Secret -->
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.creem.webhookSecret') }}
+                </label>
+                <input
+                  v-model="form.creem_webhook_secret"
+                  type="password"
+                  class="input font-mono text-sm"
+                  :placeholder="form.creem_webhook_secret_configured
+                    ? t('admin.settings.creem.webhookSecretConfiguredPlaceholder')
+                    : t('admin.settings.creem.webhookSecretPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.creem.webhookSecretHint') }}
+                </p>
+              </div>
+
+              <!-- Product ID -->
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.creem.productId') }}
+                </label>
+                <input
+                  v-model="form.creem_product_id"
+                  type="text"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.creem.productIdPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.creem.productIdHint') }}
+                </p>
+              </div>
+
+              <!-- Rate Multiplier -->
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.creem.rateMultiplier') }}
+                </label>
+                <input
+                  v-model.number="form.creem_rate_multiplier"
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  class="input w-32"
+                  placeholder="10"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.creem.rateMultiplierHint') }}
+                </p>
+              </div>
+
+              <!-- Success URL -->
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.creem.successUrl') }}
+                </label>
+                <input
+                  v-model="form.creem_success_url"
+                  type="url"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.creem.successUrlPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.creem.successUrlHint') }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Registration Settings -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -1023,6 +1141,8 @@ type SettingsForm = SystemSettings & {
   smtp_password: string
   turnstile_secret_key: string
   linuxdo_connect_client_secret: string
+  creem_api_key: string
+  creem_webhook_secret: string
 }
 
 const form = reactive<SettingsForm>({
@@ -1071,7 +1191,16 @@ const form = reactive<SettingsForm>({
   ops_monitoring_enabled: true,
   ops_realtime_monitoring_enabled: true,
   ops_query_mode_default: 'auto',
-  ops_metrics_interval_seconds: 60
+  ops_metrics_interval_seconds: 60,
+  // Creem 支付集成
+  creem_enabled: false,
+  creem_api_key: '',
+  creem_api_key_configured: false,
+  creem_webhook_secret: '',
+  creem_webhook_secret_configured: false,
+  creem_product_id: '',
+  creem_rate_multiplier: 10,
+  creem_success_url: ''
 })
 
 // LinuxDo OAuth redirect URL suggestion
@@ -1182,13 +1311,22 @@ async function saveSettings() {
       fallback_model_gemini: form.fallback_model_gemini,
       fallback_model_antigravity: form.fallback_model_antigravity,
       enable_identity_patch: form.enable_identity_patch,
-      identity_patch_prompt: form.identity_patch_prompt
+      identity_patch_prompt: form.identity_patch_prompt,
+      // Creem 支付集成
+      creem_enabled: form.creem_enabled,
+      creem_api_key: form.creem_api_key || undefined,
+      creem_webhook_secret: form.creem_webhook_secret || undefined,
+      creem_product_id: form.creem_product_id,
+      creem_rate_multiplier: form.creem_rate_multiplier,
+      creem_success_url: form.creem_success_url
     }
     const updated = await adminAPI.settings.updateSettings(payload)
     Object.assign(form, updated)
     form.smtp_password = ''
     form.turnstile_secret_key = ''
     form.linuxdo_connect_client_secret = ''
+    form.creem_api_key = ''
+    form.creem_webhook_secret = ''
     // Refresh cached public settings so sidebar/header update immediately
     await appStore.fetchPublicSettings(true)
     appStore.showSuccess(t('admin.settings.settingsSaved'))

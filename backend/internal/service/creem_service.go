@@ -12,35 +12,38 @@ import (
 	"log"
 	"net/http"
 	"strings"
-
-	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 // CreemService Creem 支付服务
 type CreemService struct {
-	cfg      *config.CreemConfig
-	userRepo UserRepository
+	settingService *SettingService
+	userRepo       UserRepository
 }
 
 // NewCreemService 创建 Creem 支付服务实例
-func NewCreemService(cfg *config.Config, userRepo UserRepository) *CreemService {
+func NewCreemService(settingService *SettingService, userRepo UserRepository) *CreemService {
 	return &CreemService{
-		cfg:      &cfg.Creem,
-		userRepo: userRepo,
+		settingService: settingService,
+		userRepo:       userRepo,
 	}
 }
 
 // IsEnabled 检查 Creem 是否启用
-func (s *CreemService) IsEnabled() bool {
-	return s.cfg.Enabled && s.cfg.APIKey != "" && s.cfg.ProductID != ""
+func (s *CreemService) IsEnabled(ctx context.Context) bool {
+	cfg, err := s.settingService.GetCreemConfig(ctx)
+	if err != nil {
+		return false
+	}
+	return cfg.Enabled && cfg.APIKey != "" && cfg.ProductID != ""
 }
 
 // GetRateMultiplier 获取充值倍率
-func (s *CreemService) GetRateMultiplier() float64 {
-	if s.cfg.RateMultiplier <= 0 {
+func (s *CreemService) GetRateMultiplier(ctx context.Context) float64 {
+	cfg, err := s.settingService.GetCreemConfig(ctx)
+	if err != nil || cfg.RateMultiplier <= 0 {
 		return 10.0
 	}
-	return s.cfg.RateMultiplier
+	return cfg.RateMultiplier
 }
 
 // CreemCheckoutRequest Creem checkout 请求
@@ -80,19 +83,19 @@ type CreemWebhookPayload struct {
 
 // CreemWebhookData Creem webhook 数据
 type CreemWebhookData struct {
-	Object           CreemCheckoutObject `json:"object"`
-	PreviousStatus   string              `json:"previous_status,omitempty"`
+	Object         CreemCheckoutObject `json:"object"`
+	PreviousStatus string              `json:"previous_status,omitempty"`
 }
 
 // CreemCheckoutObject Creem checkout 对象
 type CreemCheckoutObject struct {
-	ID                 string                 `json:"id"`
-	Status             string                 `json:"status"`
-	Mode               string                 `json:"mode"`
-	AmountTotal        int                    `json:"amount_total"` // 单位：分
-	Currency           string                 `json:"currency"`
-	Customer           CreemCustomer          `json:"customer"`
-	Metadata           map[string]interface{} `json:"metadata"`
+	ID          string                 `json:"id"`
+	Status      string                 `json:"status"`
+	Mode        string                 `json:"mode"`
+	AmountTotal int                    `json:"amount_total"` // 单位：分
+	Currency    string                 `json:"currency"`
+	Customer    CreemCustomer          `json:"customer"`
+	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 // CreemCustomer Creem 客户
@@ -108,17 +111,22 @@ type CreateCheckoutResult struct {
 
 // CreateCheckout 创建 Creem checkout session
 func (s *CreemService) CreateCheckout(ctx context.Context, userID int64, email string, amountCents int) (*CreateCheckoutResult, error) {
-	if !s.IsEnabled() {
-		return nil, fmt.Errorf("creem payment is not enabled")
+	cfg, err := s.settingService.GetCreemConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get creem config: %w", err)
 	}
 
-	successURL := s.cfg.SuccessURL
+	if !cfg.Enabled || cfg.APIKey == "" || cfg.ProductID == "" {
+		return nil, fmt.Errorf("creem payment is not enabled or not configured")
+	}
+
+	successURL := cfg.SuccessURL
 	if successURL == "" {
 		successURL = "https://hbf.ink/redeem?payment=success"
 	}
 
 	reqBody := CreemCheckoutRequest{
-		ProductID:  s.cfg.ProductID,
+		ProductID:  cfg.ProductID,
 		SuccessURL: successURL,
 		RequestID:  fmt.Sprintf("user_%d_%d", userID, amountCents),
 		Metadata: &CreemCheckoutMetadata{
@@ -138,7 +146,7 @@ func (s *CreemService) CreateCheckout(ctx context.Context, userID int64, email s
 
 	// 测试模式 API key 以 creem_test_ 开头，使用测试 API
 	apiURL := "https://api.creem.io/v1/checkouts"
-	if strings.HasPrefix(s.cfg.APIKey, "creem_test_") {
+	if strings.HasPrefix(cfg.APIKey, "creem_test_") {
 		apiURL = "https://test-api.creem.io/v1/checkouts"
 	}
 
@@ -148,7 +156,7 @@ func (s *CreemService) CreateCheckout(ctx context.Context, userID int64, email s
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", s.cfg.APIKey)
+	req.Header.Set("x-api-key", cfg.APIKey)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -176,13 +184,14 @@ func (s *CreemService) CreateCheckout(ctx context.Context, userID int64, email s
 }
 
 // VerifyWebhookSignature 验证 webhook 签名
-func (s *CreemService) VerifyWebhookSignature(payload []byte, signature string) bool {
-	if s.cfg.WebhookSecret == "" {
+func (s *CreemService) VerifyWebhookSignature(ctx context.Context, payload []byte, signature string) bool {
+	cfg, err := s.settingService.GetCreemConfig(ctx)
+	if err != nil || cfg.WebhookSecret == "" {
 		log.Println("[Creem] Warning: webhook_secret not configured, skipping signature verification")
 		return true
 	}
 
-	mac := hmac.New(sha256.New, []byte(s.cfg.WebhookSecret))
+	mac := hmac.New(sha256.New, []byte(cfg.WebhookSecret))
 	mac.Write(payload)
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
 
@@ -235,10 +244,11 @@ func (s *CreemService) HandleWebhook(ctx context.Context, payload []byte) error 
 	// 计算余额增加量
 	// amount_total 是分，转换为美元后乘以倍率
 	amountUSD := float64(checkout.AmountTotal) / 100.0
-	balanceIncrease := amountUSD * s.GetRateMultiplier()
+	rateMultiplier := s.GetRateMultiplier(ctx)
+	balanceIncrease := amountUSD * rateMultiplier
 
 	log.Printf("[Creem] Updating balance: user_id=%d amount_usd=%.2f multiplier=%.1f balance_increase=%.2f",
-		userID, amountUSD, s.GetRateMultiplier(), balanceIncrease)
+		userID, amountUSD, rateMultiplier, balanceIncrease)
 
 	// 更新用户余额
 	if err := s.userRepo.UpdateBalance(ctx, userID, balanceIncrease); err != nil {

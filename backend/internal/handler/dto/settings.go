@@ -51,6 +51,14 @@ type SystemSettings struct {
 	OpsRealtimeMonitoringEnabled bool   `json:"ops_realtime_monitoring_enabled"`
 	OpsQueryModeDefault          string `json:"ops_query_mode_default"`
 	OpsMetricsIntervalSeconds    int    `json:"ops_metrics_interval_seconds"`
+
+	// Creem 支付集成
+	CreemEnabled                 bool    `json:"creem_enabled"`
+	CreemAPIKeyConfigured        bool    `json:"creem_api_key_configured"`
+	CreemWebhookSecretConfigured bool    `json:"creem_webhook_secret_configured"`
+	CreemProductID               string  `json:"creem_product_id"`
+	CreemRateMultiplier          float64 `json:"creem_rate_multiplier"`
+	CreemSuccessURL              string  `json:"creem_success_url"`
 }
 
 type PublicSettings struct {

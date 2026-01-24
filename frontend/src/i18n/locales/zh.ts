@@ -2943,6 +2943,28 @@ export default {
         quickSetCopy: '使用当前站点生成并复制',
         redirectUrlSetAndCopied: '已使用当前站点生成回调地址并复制到剪贴板'
       },
+      creem: {
+        title: 'Creem 支付集成',
+        description: '配置 Creem 在线支付，用于用户充值余额',
+        enable: '启用 Creem 支付',
+        enableHint: '在充值页面显示在线支付选项',
+        apiKey: 'API Key',
+        apiKeyPlaceholder: 'creem_xxx...',
+        apiKeyConfiguredPlaceholder: '********',
+        apiKeyHint: '从 Creem Dashboard 获取（测试 key 以 creem_test_ 开头）',
+        webhookSecret: 'Webhook Secret',
+        webhookSecretPlaceholder: 'whsec_xxx...',
+        webhookSecretConfiguredPlaceholder: '********',
+        webhookSecretHint: '用于验证 Creem 回调签名',
+        productId: '产品 ID',
+        productIdPlaceholder: 'prod_xxx...',
+        productIdHint: '在 Creem 后台创建的产品 ID',
+        rateMultiplier: '充值倍率',
+        rateMultiplierHint: '用户支付 $1 获得的余额（例如 10 表示充 $1 得 $10）',
+        successUrl: '支付成功跳转 URL',
+        successUrlPlaceholder: 'https://your-domain.com/redeem?payment=success',
+        successUrlHint: '用户支付成功后跳转的页面地址'
+      },
       defaults: {
         title: '用户默认设置',
         description: '新用户的默认值',

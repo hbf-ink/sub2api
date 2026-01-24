@@ -155,6 +155,28 @@ const (
 
 	// SettingKeyStreamTimeoutSettings stores JSON config for stream timeout handling.
 	SettingKeyStreamTimeoutSettings = "stream_timeout_settings"
+
+	// =========================
+	// Creem Payment Integration
+	// =========================
+
+	// SettingKeyCreemEnabled 是否启用 Creem 支付
+	SettingKeyCreemEnabled = "creem_enabled"
+
+	// SettingKeyCreemAPIKey Creem API Key
+	SettingKeyCreemAPIKey = "creem_api_key"
+
+	// SettingKeyCreemWebhookSecret Creem Webhook 签名密钥
+	SettingKeyCreemWebhookSecret = "creem_webhook_secret"
+
+	// SettingKeyCreemProductID Creem 产品 ID
+	SettingKeyCreemProductID = "creem_product_id"
+
+	// SettingKeyCreemRateMultiplier 充值倍率（支付 $1 获得多少余额）
+	SettingKeyCreemRateMultiplier = "creem_rate_multiplier"
+
+	// SettingKeyCreemSuccessURL 支付成功后跳转 URL
+	SettingKeyCreemSuccessURL = "creem_success_url"
 )
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).

@@ -2791,6 +2791,28 @@ export default {
         quickSetCopy: 'Generate & Copy (current site)',
         redirectUrlSetAndCopied: 'Redirect URL generated and copied to clipboard'
       },
+      creem: {
+        title: 'Creem Payment Integration',
+        description: 'Configure Creem online payments for user balance top-up',
+        enable: 'Enable Creem Payment',
+        enableHint: 'Show online payment option on the redeem page',
+        apiKey: 'API Key',
+        apiKeyPlaceholder: 'creem_xxx...',
+        apiKeyConfiguredPlaceholder: '********',
+        apiKeyHint: 'Get from Creem Dashboard (test keys start with creem_test_)',
+        webhookSecret: 'Webhook Secret',
+        webhookSecretPlaceholder: 'whsec_xxx...',
+        webhookSecretConfiguredPlaceholder: '********',
+        webhookSecretHint: 'Used to verify Creem webhook signatures',
+        productId: 'Product ID',
+        productIdPlaceholder: 'prod_xxx...',
+        productIdHint: 'Product ID created in Creem dashboard',
+        rateMultiplier: 'Rate Multiplier',
+        rateMultiplierHint: 'Balance user receives per $1 paid (e.g., 10 means $1 = $10 balance)',
+        successUrl: 'Success Redirect URL',
+        successUrlPlaceholder: 'https://your-domain.com/redeem?payment=success',
+        successUrlHint: 'URL to redirect users after successful payment'
+      },
       defaults: {
         title: 'Default User Settings',
         description: 'Default values for new users',

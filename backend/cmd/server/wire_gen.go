@@ -165,7 +165,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	gatewayHandler := handler.NewGatewayHandler(gatewayService, geminiMessagesCompatService, antigravityGatewayService, userService, concurrencyService, billingCacheService, configConfig)
 	openAIGatewayHandler := handler.NewOpenAIGatewayHandler(openAIGatewayService, concurrencyService, billingCacheService, configConfig)
 	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo)
-	creemService := service.NewCreemService(configConfig, userRepository)
+	creemService := service.NewCreemService(settingService, userRepository)
 	creemHandler := handler.NewCreemHandler(creemService, userService)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, creemHandler)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService)

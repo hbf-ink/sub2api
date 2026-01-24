@@ -83,6 +83,12 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpsRealtimeMonitoringEnabled:         settings.OpsRealtimeMonitoringEnabled,
 		OpsQueryModeDefault:                  settings.OpsQueryModeDefault,
 		OpsMetricsIntervalSeconds:            settings.OpsMetricsIntervalSeconds,
+		CreemEnabled:                         settings.CreemEnabled,
+		CreemAPIKeyConfigured:                settings.CreemAPIKeyConfigured,
+		CreemWebhookSecretConfigured:         settings.CreemWebhookSecretConfigured,
+		CreemProductID:                       settings.CreemProductID,
+		CreemRateMultiplier:                  settings.CreemRateMultiplier,
+		CreemSuccessURL:                      settings.CreemSuccessURL,
 	})
 }
 
@@ -143,6 +149,14 @@ type UpdateSettingsRequest struct {
 	OpsRealtimeMonitoringEnabled *bool   `json:"ops_realtime_monitoring_enabled"`
 	OpsQueryModeDefault          *string `json:"ops_query_mode_default"`
 	OpsMetricsIntervalSeconds    *int    `json:"ops_metrics_interval_seconds"`
+
+	// Creem 支付集成
+	CreemEnabled        bool    `json:"creem_enabled"`
+	CreemAPIKey         string  `json:"creem_api_key"`
+	CreemWebhookSecret  string  `json:"creem_webhook_secret"`
+	CreemProductID      string  `json:"creem_product_id"`
+	CreemRateMultiplier float64 `json:"creem_rate_multiplier"`
+	CreemSuccessURL     string  `json:"creem_success_url"`
 }
 
 // UpdateSettings 更新系统设置
@@ -298,6 +312,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpsMetricsIntervalSeconds
 		}(),
+		// Creem 支付集成
+		CreemEnabled:        req.CreemEnabled,
+		CreemAPIKey:         req.CreemAPIKey,
+		CreemWebhookSecret:  req.CreemWebhookSecret,
+		CreemProductID:      req.CreemProductID,
+		CreemRateMultiplier: req.CreemRateMultiplier,
+		CreemSuccessURL:     req.CreemSuccessURL,
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {
@@ -353,6 +374,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpsRealtimeMonitoringEnabled:         updatedSettings.OpsRealtimeMonitoringEnabled,
 		OpsQueryModeDefault:                  updatedSettings.OpsQueryModeDefault,
 		OpsMetricsIntervalSeconds:            updatedSettings.OpsMetricsIntervalSeconds,
+		CreemEnabled:                         updatedSettings.CreemEnabled,
+		CreemAPIKeyConfigured:                updatedSettings.CreemAPIKeyConfigured,
+		CreemWebhookSecretConfigured:         updatedSettings.CreemWebhookSecretConfigured,
+		CreemProductID:                       updatedSettings.CreemProductID,
+		CreemRateMultiplier:                  updatedSettings.CreemRateMultiplier,
+		CreemSuccessURL:                      updatedSettings.CreemSuccessURL,
 	})
 }
 

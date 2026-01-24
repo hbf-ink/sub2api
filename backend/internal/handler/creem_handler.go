@@ -44,9 +44,10 @@ type GetStatusResponse struct {
 // GetStatus 获取支付状态
 // GET /api/v1/creem/status
 func (h *CreemHandler) GetStatus(c *gin.Context) {
+	ctx := c.Request.Context()
 	response.Success(c, GetStatusResponse{
-		Enabled:        h.creemService.IsEnabled(),
-		RateMultiplier: h.creemService.GetRateMultiplier(),
+		Enabled:        h.creemService.IsEnabled(ctx),
+		RateMultiplier: h.creemService.GetRateMultiplier(ctx),
 	})
 }
 
@@ -98,7 +99,7 @@ func (h *CreemHandler) HandleWebhook(c *gin.Context) {
 
 	// 验证签名
 	signature := c.GetHeader("creem-signature")
-	if !h.creemService.VerifyWebhookSignature(payload, signature) {
+	if !h.creemService.VerifyWebhookSignature(c.Request.Context(), payload, signature) {
 		log.Printf("[Creem] Invalid webhook signature")
 		c.JSON(401, gin.H{"error": "invalid signature"})
 		return
