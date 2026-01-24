@@ -19,62 +19,186 @@
         </div>
       </div>
 
-      <!-- Redeem Form -->
-      <div class="card">
+      <!-- Recharge Methods Card with Tabs -->
+      <div class="card overflow-hidden">
+        <!-- Tab Header -->
+        <div class="flex border-b border-gray-100 dark:border-dark-700">
+          <button
+            @click="activeTab = 'online'"
+            :class="[
+              'flex-1 flex items-center justify-center gap-2 px-4 py-4 text-sm font-medium transition-colors',
+              activeTab === 'online'
+                ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50/50 dark:bg-primary-900/10'
+                : 'text-gray-500 dark:text-dark-400 hover:text-gray-700 dark:hover:text-dark-300 hover:bg-gray-50 dark:hover:bg-dark-800'
+            ]"
+          >
+            <Icon name="creditCard" size="md" />
+            {{ t('redeem.onlineRecharge') }}
+          </button>
+          <button
+            @click="activeTab = 'code'"
+            :class="[
+              'flex-1 flex items-center justify-center gap-2 px-4 py-4 text-sm font-medium transition-colors',
+              activeTab === 'code'
+                ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50/50 dark:bg-primary-900/10'
+                : 'text-gray-500 dark:text-dark-400 hover:text-gray-700 dark:hover:text-dark-300 hover:bg-gray-50 dark:hover:bg-dark-800'
+            ]"
+          >
+            <Icon name="gift" size="md" />
+            {{ t('redeem.redeemCodeLabel') }}
+          </button>
+        </div>
+
+        <!-- Tab Content -->
         <div class="p-6">
-          <form @submit.prevent="handleRedeem" class="space-y-5">
+          <!-- Online Recharge Tab -->
+          <div v-if="activeTab === 'online'" class="space-y-5">
+            <!-- Amount Selection -->
             <div>
-              <label for="code" class="input-label">
-                {{ t('redeem.redeemCodeLabel') }}
-              </label>
-              <div class="relative mt-1">
-                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                  <Icon name="gift" size="md" class="text-gray-400 dark:text-dark-500" />
-                </div>
+              <label class="input-label">{{ t('redeem.selectAmount') }}</label>
+              <div class="mt-2 grid grid-cols-4 gap-2">
+                <button
+                  v-for="amount in [1, 5, 10, 20]"
+                  :key="amount"
+                  @click="selectedAmount = amount"
+                  :class="[
+                    'rounded-xl border-2 py-3 text-center font-medium transition-all',
+                    selectedAmount === amount
+                      ? 'border-primary-500 bg-primary-50 text-primary-600 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-400'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-primary-300 dark:border-dark-600 dark:bg-dark-800 dark:text-dark-200 dark:hover:border-primary-600'
+                  ]"
+                >
+                  ${{ amount }}
+                </button>
+              </div>
+              <div class="mt-3">
                 <input
-                  id="code"
-                  v-model="redeemCode"
-                  type="text"
-                  required
-                  :placeholder="t('redeem.redeemCodePlaceholder')"
-                  :disabled="submitting"
-                  class="input py-3 pl-12 text-lg"
+                  v-model.number="customAmount"
+                  type="number"
+                  min="1"
+                  max="100"
+                  :placeholder="t('redeem.customAmount')"
+                  class="input"
+                  @input="selectedAmount = null"
                 />
               </div>
-              <p class="input-hint">
-                {{ t('redeem.redeemCodeHint') }}
+            </div>
+
+            <!-- Preview -->
+            <div class="rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 p-4 dark:from-emerald-900/20 dark:to-teal-900/20">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm text-gray-600 dark:text-dark-400">{{ t('redeem.youWillGet') }}</p>
+                  <p class="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                    ${{ (finalAmount * 10).toFixed(0) }}
+                  </p>
+                </div>
+                <div class="text-right">
+                  <p class="text-sm text-gray-600 dark:text-dark-400">{{ t('redeem.payAmount') }}</p>
+                  <p class="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
+                    ${{ finalAmount.toFixed(0) }}
+                  </p>
+                </div>
+              </div>
+              <p class="mt-2 text-xs text-gray-500 dark:text-dark-500">
+                {{ t('redeem.rechargeFeature2') }}
               </p>
             </div>
 
-            <button
-              type="submit"
-              :disabled="!redeemCode || submitting"
-              class="btn btn-primary w-full py-3"
+            <!-- Pay Button -->
+            <a
+              :href="rechargeUrl"
+              target="_blank"
+              class="btn btn-primary w-full py-3 flex items-center justify-center gap-2"
             >
-              <svg
-                v-if="submitting"
-                class="-ml-1 mr-2 h-5 w-5 animate-spin"
-                fill="none"
-                viewBox="0 0 24 24"
+              <Icon name="creditCard" size="md" />
+              {{ t('redeem.proceedToPayment') }}
+            </a>
+
+            <!-- Payment Info -->
+            <div class="flex items-start gap-3 rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+              <Icon name="infoCircle" size="md" class="mt-0.5 flex-shrink-0 text-gray-400" />
+              <div class="text-xs text-gray-500 dark:text-dark-400 space-y-1">
+                <p>{{ t('redeem.rechargeFeature1') }}</p>
+                <p>{{ t('redeem.rechargeFeature3') }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Redeem Code Tab -->
+          <div v-else class="space-y-5">
+            <form @submit.prevent="handleRedeem" class="space-y-5">
+              <div>
+                <label for="code" class="input-label">
+                  {{ t('redeem.redeemCodeLabel') }}
+                </label>
+                <div class="relative mt-1">
+                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                    <Icon name="gift" size="md" class="text-gray-400 dark:text-dark-500" />
+                  </div>
+                  <input
+                    id="code"
+                    v-model="redeemCode"
+                    type="text"
+                    required
+                    :placeholder="t('redeem.redeemCodePlaceholder')"
+                    :disabled="submitting"
+                    class="input py-3 pl-12 text-lg"
+                  />
+                </div>
+                <p class="input-hint">
+                  {{ t('redeem.redeemCodeHint') }}
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                :disabled="!redeemCode || submitting"
+                class="btn btn-primary w-full py-3"
               >
-                <circle
-                  class="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  stroke-width="4"
-                ></circle>
-                <path
-                  class="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              <Icon v-else name="checkCircle" size="md" class="mr-2" />
-              {{ submitting ? t('redeem.redeeming') : t('redeem.redeemButton') }}
-            </button>
-          </form>
+                <svg
+                  v-if="submitting"
+                  class="-ml-1 mr-2 h-5 w-5 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  ></circle>
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <Icon v-else name="checkCircle" size="md" class="mr-2" />
+                {{ submitting ? t('redeem.redeeming') : t('redeem.redeemButton') }}
+              </button>
+            </form>
+
+            <!-- Code Info -->
+            <div class="flex items-start gap-3 rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+              <Icon name="infoCircle" size="md" class="mt-0.5 flex-shrink-0 text-gray-400" />
+              <ul class="text-xs text-gray-500 dark:text-dark-400 space-y-1">
+                <li>{{ t('redeem.codeRule1') }}</li>
+                <li>{{ t('redeem.codeRule2') }}</li>
+                <li>
+                  {{ t('redeem.codeRule3') }}
+                  <span
+                    v-if="contactInfo"
+                    class="ml-1 inline-flex items-center rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700 dark:bg-dark-700 dark:text-dark-300"
+                  >
+                    {{ contactInfo }}
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -161,42 +285,6 @@
           </div>
         </div>
       </transition>
-
-      <!-- Information Card -->
-      <div
-        class="card border-primary-200 bg-primary-50 dark:border-primary-800/50 dark:bg-primary-900/20"
-      >
-        <div class="p-6">
-          <div class="flex items-start gap-4">
-            <div
-              class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-100 dark:bg-primary-900/30"
-            >
-              <Icon name="infoCircle" size="md" class="text-primary-600 dark:text-primary-400" />
-            </div>
-            <div class="flex-1">
-              <h3 class="text-sm font-semibold text-primary-800 dark:text-primary-300">
-                {{ t('redeem.aboutCodes') }}
-              </h3>
-              <ul
-                class="mt-2 list-inside list-disc space-y-1 text-sm text-primary-700 dark:text-primary-400"
-              >
-                <li>{{ t('redeem.codeRule1') }}</li>
-                <li>{{ t('redeem.codeRule2') }}</li>
-                <li>
-                  {{ t('redeem.codeRule3') }}
-                  <span
-                    v-if="contactInfo"
-                    class="ml-1.5 inline-flex items-center rounded-md bg-primary-200/50 px-2 py-0.5 text-xs font-medium text-primary-800 dark:bg-primary-800/40 dark:text-primary-200"
-                  >
-                    {{ contactInfo }}
-                  </span>
-                </li>
-                <li>{{ t('redeem.codeRule4') }}</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- Recent Activity -->
       <div class="card">
@@ -351,6 +439,26 @@ const subscriptionStore = useSubscriptionStore()
 
 const user = computed(() => authStore.user)
 
+// Tab 状态
+const activeTab = ref<'online' | 'code'>('online')
+
+// 在线充值
+const selectedAmount = ref<number | null>(10)
+const customAmount = ref<number | null>(null)
+
+const finalAmount = computed(() => {
+  if (selectedAmount.value) return selectedAmount.value
+  if (customAmount.value && customAmount.value >= 1 && customAmount.value <= 100) return customAmount.value
+  return 10
+})
+
+const rechargeUrl = computed(() => {
+  const email = user.value?.email || ''
+  const amount = finalAmount.value
+  return `https://pay.hbf.ink/?email=${encodeURIComponent(email)}&amount=${amount}`
+})
+
+// 兑换码
 const redeemCode = ref('')
 const submitting = ref(false)
 const redeemResult = ref<{

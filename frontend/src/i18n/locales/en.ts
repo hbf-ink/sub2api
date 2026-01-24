@@ -524,7 +524,19 @@ export default {
     codeRedeemSuccess: 'Code redeemed successfully!',
     failedToRedeem: 'Failed to redeem code. Please check the code and try again.',
     subscriptionRefreshFailed: 'Redeemed successfully, but failed to refresh subscription status.',
-    pleaseEnterCode: 'Please enter a redeem code'
+    pleaseEnterCode: 'Please enter a redeem code',
+    // Online Recharge
+    onlineRecharge: 'Online Recharge',
+    onlineRechargeDesc: 'Instantly top up your balance with credit or debit card',
+    rechargeNow: 'Recharge Now',
+    rechargeFeature1: 'Supports Visa, MasterCard, UnionPay and more',
+    rechargeFeature2: 'Pay $1 and get $10 balance',
+    rechargeFeature3: 'Instant credit, secure payment',
+    selectAmount: 'Select Amount',
+    customAmount: 'Custom amount (1-100)',
+    youWillGet: 'You will get',
+    payAmount: 'Pay amount',
+    proceedToPayment: 'Proceed to Payment'
   },
 
   // Profile

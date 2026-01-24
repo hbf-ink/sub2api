@@ -520,7 +520,19 @@ export default {
     codeRedeemSuccess: '兑换成功！',
     failedToRedeem: '兑换失败，请检查兑换码后重试。',
     subscriptionRefreshFailed: '兑换成功，但订阅状态刷新失败。',
-    pleaseEnterCode: '请输入兑换码'
+    pleaseEnterCode: '请输入兑换码',
+    // 在线充值
+    onlineRecharge: '在线充值',
+    onlineRechargeDesc: '使用信用卡或借记卡即时充值余额',
+    rechargeNow: '立即充值',
+    rechargeFeature1: '支持 Visa、MasterCard、银联等主流卡',
+    rechargeFeature2: '支付 $1 即可获得 $10 余额',
+    rechargeFeature3: '即时到账，安全可靠',
+    selectAmount: '选择充值金额',
+    customAmount: '自定义金额 (1-100)',
+    youWillGet: '您将获得',
+    payAmount: '支付金额',
+    proceedToPayment: '前往支付'
   },
 
   // Profile
