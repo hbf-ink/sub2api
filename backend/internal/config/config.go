@@ -62,6 +62,7 @@ type Config struct {
 	Timezone     string                     `mapstructure:"timezone"` // e.g. "Asia/Shanghai", "UTC"
 	Gemini       GeminiConfig               `mapstructure:"gemini"`
 	Update       UpdateConfig               `mapstructure:"update"`
+	Creem        CreemConfig                `mapstructure:"creem"`
 }
 
 type GeminiConfig struct {
@@ -91,6 +92,22 @@ type UpdateConfig struct {
 	// 支持 http/https/socks5/socks5h 协议
 	// 例如: "http://127.0.0.1:7890", "socks5://127.0.0.1:1080"
 	ProxyURL string `mapstructure:"proxy_url"`
+}
+
+// CreemConfig Creem 支付集成配置
+type CreemConfig struct {
+	// Enabled 是否启用 Creem 支付
+	Enabled bool `mapstructure:"enabled"`
+	// APIKey Creem API 密钥
+	APIKey string `mapstructure:"api_key"`
+	// WebhookSecret Creem Webhook 签名密钥
+	WebhookSecret string `mapstructure:"webhook_secret"`
+	// ProductID Creem 产品 ID
+	ProductID string `mapstructure:"product_id"`
+	// RateMultiplier 充值倍率（例如 10 表示付 $1 得 $10 余额）
+	RateMultiplier float64 `mapstructure:"rate_multiplier"`
+	// SuccessURL 支付成功后跳转地址
+	SuccessURL string `mapstructure:"success_url"`
 }
 
 type LinuxDoConnectConfig struct {
@@ -869,6 +886,14 @@ func setDefaults() {
 	viper.SetDefault("gemini.oauth.client_secret", "")
 	viper.SetDefault("gemini.oauth.scopes", "")
 	viper.SetDefault("gemini.quota.policy", "")
+
+	// Creem 支付配置
+	viper.SetDefault("creem.enabled", false)
+	viper.SetDefault("creem.api_key", "")
+	viper.SetDefault("creem.webhook_secret", "")
+	viper.SetDefault("creem.product_id", "")
+	viper.SetDefault("creem.rate_multiplier", 10.0)
+	viper.SetDefault("creem.success_url", "")
 }
 
 func (c *Config) Validate() error {

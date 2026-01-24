@@ -536,7 +536,10 @@ export default {
     customAmount: 'Custom amount (1-100)',
     youWillGet: 'You will get',
     payAmount: 'Pay amount',
-    proceedToPayment: 'Proceed to Payment'
+    proceedToPayment: 'Proceed to Payment',
+    processingPayment: 'Processing...',
+    securePaymentByCreem: 'Secure payment by Creem',
+    paymentFailed: 'Failed to create payment, please try again'
   },
 
   // Profile

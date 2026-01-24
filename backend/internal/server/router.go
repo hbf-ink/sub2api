@@ -76,4 +76,5 @@ func registerRoutes(
 	routes.RegisterUserRoutes(v1, h, jwtAuth)
 	routes.RegisterAdminRoutes(v1, h, adminAuth)
 	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, cfg)
+	routes.RegisterCreemRoutes(r, v1, h, jwtAuth)
 }

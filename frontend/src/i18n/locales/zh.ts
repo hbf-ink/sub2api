@@ -532,7 +532,10 @@ export default {
     customAmount: '自定义金额 (1-100)',
     youWillGet: '您将获得',
     payAmount: '支付金额',
-    proceedToPayment: '前往支付'
+    proceedToPayment: '前往支付',
+    processingPayment: '处理中...',
+    securePaymentByCreem: '安全支付由 Creem 提供',
+    paymentFailed: '支付创建失败，请重试'
   },
 
   // Profile

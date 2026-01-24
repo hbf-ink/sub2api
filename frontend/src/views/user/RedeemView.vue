@@ -106,14 +106,42 @@
             </div>
 
             <!-- Pay Button -->
-            <a
-              :href="rechargeUrl"
-              target="_blank"
+            <button
+              @click="handlePayment"
+              :disabled="paymentLoading"
               class="btn btn-primary w-full py-3 flex items-center justify-center gap-2"
             >
-              <Icon name="creditCard" size="md" />
-              {{ t('redeem.proceedToPayment') }}
-            </a>
+              <svg
+                v-if="paymentLoading"
+                class="h-5 w-5 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <Icon v-else name="creditCard" size="md" />
+              {{ paymentLoading ? t('redeem.processingPayment') : t('redeem.proceedToPayment') }}
+            </button>
+
+            <!-- Creem Branding -->
+            <div class="flex items-center justify-center gap-2 text-xs text-gray-400 dark:text-dark-500">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+              </svg>
+              <span>{{ t('redeem.securePaymentByCreem') }}</span>
+            </div>
 
             <!-- Payment Info -->
             <div class="flex items-start gap-3 rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
@@ -445,6 +473,7 @@ const activeTab = ref<'online' | 'code'>('online')
 // 在线充值
 const selectedAmount = ref<number | null>(10)
 const customAmount = ref<number | null>(null)
+const paymentLoading = ref(false)
 
 const finalAmount = computed(() => {
   if (selectedAmount.value) return selectedAmount.value
@@ -452,11 +481,38 @@ const finalAmount = computed(() => {
   return 10
 })
 
-const rechargeUrl = computed(() => {
-  const email = user.value?.email || ''
-  const amount = finalAmount.value
-  return `https://pay.hbf.ink/?email=${encodeURIComponent(email)}&amount=${amount}`
-})
+const handlePayment = async () => {
+  paymentLoading.value = true
+  errorMessage.value = ''
+
+  try {
+    const response = await fetch('/api/v1/creem/checkout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authStore.token}`
+      },
+      body: JSON.stringify({ amount: finalAmount.value })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.detail || t('redeem.paymentFailed'))
+    }
+
+    const data = await response.json()
+    if (data.data?.checkout_url) {
+      window.location.href = data.data.checkout_url
+    } else {
+      throw new Error(t('redeem.paymentFailed'))
+    }
+  } catch (error: any) {
+    errorMessage.value = error.message || t('redeem.paymentFailed')
+    appStore.showError(errorMessage.value)
+  } finally {
+    paymentLoading.value = false
+  }
+}
 
 // 兑换码
 const redeemCode = ref('')
