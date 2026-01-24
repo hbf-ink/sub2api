@@ -45,35 +45,23 @@ func (s *CreemService) GetRateMultiplier() float64 {
 
 // CreemCheckoutRequest Creem checkout 请求
 type CreemCheckoutRequest struct {
-	ProductID   string                  `json:"product_id"`
-	SuccessURL  string                  `json:"success_url"`
-	RequestID   string                  `json:"request_id,omitempty"`
-	Metadata    *CreemCheckoutMetadata  `json:"metadata,omitempty"`
-	Customer    *CreemCheckoutCustomer  `json:"customer,omitempty"`
-	LineItems   []CreemCheckoutLineItem `json:"line_items,omitempty"`
+	ProductID  string                 `json:"product_id"`
+	SuccessURL string                 `json:"success_url"`
+	RequestID  string                 `json:"request_id,omitempty"`
+	Metadata   *CreemCheckoutMetadata `json:"metadata,omitempty"`
+	Customer   *CreemCheckoutCustomer `json:"customer,omitempty"`
 }
 
 // CreemCheckoutMetadata Creem checkout 元数据
 type CreemCheckoutMetadata struct {
 	UserID int64  `json:"user_id"`
 	Email  string `json:"email"`
+	Amount int    `json:"amount"` // 金额（分）
 }
 
 // CreemCheckoutCustomer Creem checkout 客户信息
 type CreemCheckoutCustomer struct {
 	Email string `json:"email"`
-}
-
-// CreemCheckoutLineItem Creem checkout 行项目
-type CreemCheckoutLineItem struct {
-	PriceData CreemPriceData `json:"price_data"`
-	Quantity  int            `json:"quantity"`
-}
-
-// CreemPriceData Creem 价格数据
-type CreemPriceData struct {
-	Currency  string `json:"currency"`
-	UnitPrice int    `json:"unit_price"` // 单位：分
 }
 
 // CreemCheckoutResponse Creem checkout 响应
@@ -136,18 +124,10 @@ func (s *CreemService) CreateCheckout(ctx context.Context, userID int64, email s
 		Metadata: &CreemCheckoutMetadata{
 			UserID: userID,
 			Email:  email,
+			Amount: amountCents,
 		},
 		Customer: &CreemCheckoutCustomer{
 			Email: email,
-		},
-		LineItems: []CreemCheckoutLineItem{
-			{
-				PriceData: CreemPriceData{
-					Currency:  "usd",
-					UnitPrice: amountCents,
-				},
-				Quantity: 1,
-			},
 		},
 	}
 
@@ -156,7 +136,13 @@ func (s *CreemService) CreateCheckout(ctx context.Context, userID int64, email s
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.creem.io/v1/checkouts", bytes.NewReader(jsonBody))
+	// 测试模式 API key 以 creem_test_ 开头，使用测试 API
+	apiURL := "https://api.creem.io/v1/checkouts"
+	if strings.HasPrefix(s.cfg.APIKey, "creem_test_") {
+		apiURL = "https://test-api.creem.io/v1/checkouts"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
