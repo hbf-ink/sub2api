@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sub2api
+  name: sub2api-beta
   labels:
-    app: sub2api
+    app: sub2api-beta
 spec:
   replicas: 1
   strategy:
@@ -13,17 +13,17 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: sub2api
+      app: sub2api-beta
   template:
     metadata:
       labels:
-        app: sub2api
+        app: sub2api-beta
     spec:
       imagePullSecrets:
         - name: ghcr-secret
       containers:
         - name: sub2api
-          image: ghcr.io/hbf-ink/sub2api:latest
+          image: ghcr.io/hbf-ink/sub2api:beta
           ports:
             - containerPort: 8080
           env:
@@ -65,10 +65,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: sub2api
+  name: sub2api-beta
 spec:
   selector:
-    app: sub2api
+    app: sub2api-beta
   ports:
     - port: 8080
       targetPort: 8080
