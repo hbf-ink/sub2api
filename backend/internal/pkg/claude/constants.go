@@ -79,3 +79,20 @@ func DefaultModelIDs() []string {
 
 // DefaultTestModel 测试时使用的默认模型
 const DefaultTestModel = "claude-sonnet-4-5-20250929"
+
+// SetupToken 账号被 Anthropic 禁止的 tool 名称映射
+var SetupTokenBlockedTools = map[string]string{
+	"read_file": "HubBF_read_file",
+	"read":      "HubBF_read",
+	"write":     "HubBF_write",
+	"bash":      "HubBF_bash",
+}
+
+// SetupTokenBlockedToolsReverse 反向映射
+var SetupTokenBlockedToolsReverse = func() map[string]string {
+	m := make(map[string]string)
+	for k, v := range SetupTokenBlockedTools {
+		m[v] = k
+	}
+	return m
+}()
