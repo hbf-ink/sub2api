@@ -9,6 +9,7 @@ spec:
   tls:
     - hosts:
         - hbf.ink
+        - beta.hbf.ink
       secretName: hbf-ink-tls
   rules:
     - host: hbf.ink
@@ -19,5 +20,15 @@ spec:
             backend:
               service:
                 name: sub2api
+                port:
+                  number: 8080
+    - host: beta.hbf.ink
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sub2api-beta
                 port:
                   number: 8080
