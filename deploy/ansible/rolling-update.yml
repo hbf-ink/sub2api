@@ -1,0 +1,103 @@
+---
+# Sub2API 滚动更新 Playbook
+# 用法: ansible-playbook -i inventory.yml rolling-update.yml
+#
+# 可选参数:
+#   -e "sub2api_tag=v1.2.3"  指定版本
+#   -e "target_hosts=calvin-hk-loc"  只更新特定节点
+#   --check  dry-run 模式
+
+- name: Sub2API Rolling Update
+  hosts: "{{ target_hosts | default('sub2api_nodes') }}"
+  serial: 1  # 一次更新一台，实现滚动更新
+  gather_facts: yes
+  
+  vars:
+    image: "{{ sub2api_image | default('ghcr.io/hbf-ink/sub2api') }}"
+    tag: "{{ sub2api_tag | default('latest') }}"
+    health_check_url: "http://127.0.0.1:8080/health"
+    health_check_retries: 30
+    health_check_delay: 2
+  
+  tasks:
+    - name: Display update info
+      debug:
+        msg: "Updating {{ inventory_hostname }} to {{ image }}:{{ tag }}"
+    
+    - name: Detect container runtime
+      shell: command -v podman || command -v docker
+      register: container_runtime
+      changed_when: false
+    
+    - name: Set container runtime fact
+      set_fact:
+        runtime: "{{ container_runtime.stdout | basename }}"
+    
+    - name: Pull new image
+      shell: "{{ runtime }} pull {{ image }}:{{ tag }}"
+      register: pull_result
+      retries: 3
+      delay: 5
+      until: pull_result.rc == 0
+    
+    - name: Get current container info (for rollback)
+      shell: "{{ runtime }} inspect sub2api --format '{%raw%}{{.Image}}{%endraw%}' 2>/dev/null || echo 'none'"
+      register: current_image
+      changed_when: false
+      ignore_errors: yes
+    
+    - name: Stop old container
+      shell: "{{ runtime }} stop sub2api"
+      ignore_errors: yes
+    
+    - name: Remove old container
+      shell: "{{ runtime }} rm sub2api"
+      ignore_errors: yes
+    
+    - name: Start new container
+      shell: |
+        {{ runtime }} run -d \
+          --name sub2api \
+          --restart always \
+          --network host \
+          -v /opt/sub2api/config.yaml:/app/config.yaml:ro \
+          -v /opt/sub2api/data:/app/data \
+          -e RUN_MODE=standard \
+          -e TZ=Asia/Shanghai \
+          -e NODE_NAME="{{ inventory_hostname }}" \
+          {{ image }}:{{ tag }}
+      register: start_result
+    
+    - name: Wait for container to start
+      pause:
+        seconds: 3
+    
+    - name: Health check
+      uri:
+        url: "{{ health_check_url }}"
+        status_code: 200
+        timeout: 5
+      register: health_result
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+      until: health_result.status == 200
+    
+    - name: Update success
+      debug:
+        msg: "✓ {{ inventory_hostname }} updated successfully"
+      when: health_result.status == 200
+
+  handlers:
+    - name: Rollback on failure
+      shell: |
+        {{ runtime }} stop sub2api || true
+        {{ runtime }} rm sub2api || true
+        {{ runtime }} run -d \
+          --name sub2api \
+          --restart always \
+          --network host \
+          -v /opt/sub2api/config.yaml:/app/config.yaml:ro \
+          -v /opt/sub2api/data:/app/data \
+          {{ current_image.stdout }}
+      when: current_image.stdout != 'none'
+      listen: "rollback"
