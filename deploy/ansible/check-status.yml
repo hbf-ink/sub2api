@@ -1,0 +1,61 @@
+---
+# Sub2API 节点状态检查 Playbook
+# 用法: ansible-playbook -i inventory.yml check-status.yml
+
+- name: Check Sub2API Nodes Status
+  hosts: sub2api_nodes
+  gather_facts: yes
+  
+  tasks:
+    - name: Detect container runtime
+      shell: command -v podman || command -v docker
+      register: container_runtime
+      changed_when: false
+    
+    - name: Set container runtime fact
+      set_fact:
+        runtime: "{{ container_runtime.stdout | basename }}"
+    
+    - name: Check container status
+      shell: "{{ runtime }} ps --filter name=sub2api --format '{%raw%}{{.Status}}{%endraw%}'"
+      register: container_status
+      changed_when: false
+      ignore_errors: yes
+    
+    - name: Check health endpoint
+      uri:
+        url: "http://127.0.0.1:8080/health"
+        status_code: 200
+        timeout: 5
+      register: health_check
+      ignore_errors: yes
+    
+    - name: Get container image
+      shell: "{{ runtime }} inspect sub2api --format '{%raw%}{{.Config.Image}}{%endraw%}' 2>/dev/null || echo 'N/A'"
+      register: current_image
+      changed_when: false
+      ignore_errors: yes
+    
+    - name: Get node info
+      slurp:
+        src: /opt/sub2api/node.json
+      register: node_info_raw
+      ignore_errors: yes
+    
+    - name: Parse node info
+      set_fact:
+        node_info: "{{ node_info_raw.content | b64decode | from_json }}"
+      when: node_info_raw is succeeded
+      ignore_errors: yes
+    
+    - name: Display status
+      debug:
+        msg: |
+          === {{ inventory_hostname }} ===
+          Host:       {{ ansible_host }}:{{ ansible_port | default(22) }}
+          Container:  {{ container_status.stdout | default('NOT RUNNING') }}
+          Health:     {{ 'OK' if health_check.status == 200 else 'FAILED' }}
+          Image:      {{ current_image.stdout | default('N/A') }}
+          Region:     {{ node_info.region | default(node_region) | default('N/A') }}
+          Provider:   {{ node_info.provider | default(node_provider) | default('N/A') }}
+          Beta:       {{ node_info.beta | default(node_beta) | default(false) }}
