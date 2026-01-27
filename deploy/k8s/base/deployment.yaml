@@ -20,6 +20,8 @@ spec:
       labels:
         app: sub2api
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: sub2api
           image: ghcr.io/hbf-ink/sub2api:latest
