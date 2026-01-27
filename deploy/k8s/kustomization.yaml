@@ -9,4 +9,4 @@ resources:
 
 images:
   - name: ghcr.io/hbf-ink/sub2api
-    newTag: latest  # ArgoCD 会自动更新这个 tag
+    newTag: v0.2.0  # 更新版本时修改这里
