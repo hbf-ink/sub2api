@@ -130,3 +130,6 @@ deploy/docker-compose.override.yml
 vite.config.js
 docs/*
 .serena/
+# Error logs
+backend/sub2api.err
+backend/*.err

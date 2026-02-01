@@ -1,0 +1,47 @@
+---
+# 在业务机安装 K3s Agent
+- name: 安装 K3s Agent
+  hosts: prod
+  become: yes
+  vars:
+    k3s_server_tailscale_ip: "{{ hostvars['ops-tokyo-01']['tailscale_ip'] }}"
+    k3s_token: "{{ hostvars['ops-tokyo-01']['k3s_join_token'] }}"
+  tasks:
+    - name: 安装 K3s Agent (使用 Tailscale IP)
+      shell: |
+        curl -sfL https://get.k3s.io | K3S_URL=https://{{ k3s_server_tailscale_ip }}:6443 K3S_TOKEN={{ k3s_token }} sh -s - \
+          --node-ip {{ tailscale_ip }} \
+          --flannel-iface tailscale0
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: 等待 Agent 加入集群
+      pause:
+        seconds: 15
+
+- name: 验证集群并打标签
+  hosts: ops
+  become: yes
+  tasks:
+    - name: 验证所有节点就绪
+      shell: kubectl get nodes
+      register: nodes_status
+      retries: 30
+      delay: 5
+      until: "'Ready' in nodes_status.stdout"
+
+    - name: 获取 prod 节点名称
+      shell: kubectl get nodes -l '!node-role' -o jsonpath='{.items[0].metadata.name}'
+      register: prod_node_name
+
+    - name: 给 prod 节点打标签
+      shell: kubectl label node {{ prod_node_name.stdout }} node-role=prod --overwrite
+      when: prod_node_name.stdout != ""
+
+    - name: 显示集群状态
+      shell: kubectl get nodes -o wide
+      register: cluster_status
+
+    - name: 输出集群状态
+      debug:
+        var: cluster_status.stdout_lines

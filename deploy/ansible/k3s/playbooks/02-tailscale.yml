@@ -1,0 +1,44 @@
+---
+# 安装和配置 Tailscale 组网
+- name: 安装 Tailscale
+  hosts: all
+  become: yes
+  tasks:
+    - name: 安装 Tailscale
+      shell: curl -fsSL https://tailscale.com/install.sh | sh
+      args:
+        creates: /usr/bin/tailscale
+
+    - name: 启动 Tailscale 并加入网络
+      shell: |
+        tailscale up --authkey={{ tailscale_authkey }} --hostname={{ inventory_hostname }}
+      register: tailscale_up
+      changed_when: tailscale_up.rc == 0
+
+    - name: 获取 Tailscale IP
+      shell: tailscale ip -4
+      register: tailscale_ip_result
+      changed_when: false
+
+    - name: 保存 Tailscale IP 到变量
+      set_fact:
+        tailscale_ip: "{{ tailscale_ip_result.stdout }}"
+
+    - name: 显示 Tailscale IP
+      debug:
+        msg: "{{ inventory_hostname }} Tailscale IP: {{ tailscale_ip }}"
+
+- name: 验证 Tailscale 网络连通性
+  hosts: ops
+  become: yes
+  tasks:
+    - name: 等待网络稳定
+      pause:
+        seconds: 5
+
+    - name: 测试到 prod 节点的连通性
+      shell: ping -c 3 {{ hostvars['prod-tokyo-01']['tailscale_ip'] }}
+      register: ping_result
+      retries: 3
+      delay: 5
+      until: ping_result.rc == 0

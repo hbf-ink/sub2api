@@ -1,0 +1,33 @@
+---
+# 基础环境初始化
+- name: 初始化所有节点基础环境
+  hosts: all
+  become: yes
+  tasks:
+    - name: 更新 apt 缓存
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: 安装基础工具
+      apt:
+        name:
+          - curl
+          - wget
+          - vim
+          - htop
+          - net-tools
+          - jq
+          - unzip
+        state: present
+
+    - name: 设置时区为 Asia/Tokyo
+      timezone:
+        name: Asia/Tokyo
+
+    - name: 清理 Zeabur 预装 K3s (如果存在)
+      shell: |
+        /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
+        /usr/local/bin/k3s-agent-uninstall.sh 2>/dev/null || true
+        rm -rf /var/lib/rancher /etc/rancher
+      ignore_errors: yes

@@ -1,0 +1,75 @@
+---
+# 部署监控栈 (Prometheus + Loki + Grafana + Tempo)
+- name: 部署监控栈
+  hosts: ops
+  become: yes
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: 添加 Helm 仓库
+      shell: |
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo add grafana https://grafana.github.io/helm-charts
+        helm repo update
+
+    - name: 创建 monitoring namespace
+      shell: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: 部署 Prometheus
+      shell: |
+        helm upgrade --install prometheus prometheus-community/prometheus \
+          --namespace monitoring \
+          --set server.persistentVolume.enabled=false \
+          --set alertmanager.persistentVolume.enabled=false \
+          --set server.resources.limits.memory={{ resources.prometheus.memory_limit }} \
+          --set server.resources.requests.memory={{ resources.prometheus.memory_request }} \
+          --set kube-state-metrics.nodeSelector.node-role=ops \
+          --set server.nodeSelector.node-role=ops \
+          --set alertmanager.nodeSelector.node-role=ops \
+          --set pushgateway.nodeSelector.node-role=ops
+
+    - name: 部署 Loki
+      shell: |
+        helm upgrade --install loki grafana/loki-stack \
+          --namespace monitoring \
+          --set loki.persistence.enabled=false \
+          --set loki.resources.limits.memory={{ resources.loki.memory_limit }} \
+          --set loki.resources.requests.memory={{ resources.loki.memory_request }} \
+          --set promtail.enabled=true \
+          --set loki.nodeSelector.node-role=ops
+
+    - name: 部署 Grafana
+      shell: |
+        helm upgrade --install grafana grafana/grafana \
+          --namespace monitoring \
+          --set persistence.enabled=false \
+          --set adminPassword={{ grafana_admin_password }} \
+          --set resources.limits.memory={{ resources.grafana.memory_limit }} \
+          --set resources.requests.memory={{ resources.grafana.memory_request }} \
+          --set service.type=NodePort \
+          --set service.nodePort=30030 \
+          --set nodeSelector.node-role=ops
+
+    - name: 部署 Tempo
+      shell: |
+        helm upgrade --install tempo grafana/tempo \
+          --namespace monitoring \
+          --set tempo.resources.limits.memory={{ resources.tempo.memory_limit }} \
+          --set tempo.resources.requests.memory={{ resources.tempo.memory_request }} \
+          --set nodeSelector.node-role=ops
+
+    - name: 等待 Grafana Pod 就绪
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s
+      register: grafana_ready
+      retries: 3
+      delay: 10
+      until: grafana_ready.rc == 0
+      ignore_errors: yes
+
+    - name: 显示监控栈状态
+      shell: kubectl get pods -n monitoring
+      register: monitoring_status
+
+    - name: 输出监控栈状态
+      debug:
+        var: monitoring_status.stdout_lines

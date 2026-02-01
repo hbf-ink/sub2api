@@ -1,0 +1,20 @@
+# K3s 集群节点清单
+# 使用前请修改 ansible_host 和 ansible_ssh_pass
+
+all:
+  children:
+    ops:
+      hosts:
+        ops-tokyo-01:
+          ansible_host: 43.163.241.60      # 运维机 IP
+          ansible_user: ubuntu
+          ansible_become: yes
+          # ansible_ssh_pass: "your-password"  # 或使用 SSH key
+          node_role: ops
+    prod:
+      hosts:
+        prod-tokyo-01:
+          ansible_host: 8.209.245.253      # 业务机 IP
+          ansible_user: root
+          # ansible_ssh_pass: "your-password"  # 或使用 SSH key
+          node_role: prod
