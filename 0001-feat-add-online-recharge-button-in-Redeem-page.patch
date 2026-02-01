@@ -1,0 +1,126 @@
+From 816d1b06df2473bf4f270b4af75e6fe647a36d37 Mon Sep 17 00:00:00 2001
+From: calvinaistudio <calvinaistudio@gmail.com>
+Date: Sat, 24 Jan 2026 12:00:44 +0800
+Subject: [PATCH] feat: add online recharge button in Redeem page
+
+- Add online recharge card with link to pay.hbf.ink
+- Auto-fill user email in payment URL
+- Add i18n translations for zh and en
+
+Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>
+---
+ frontend/src/i18n/locales/en.ts        |  9 ++++-
+ frontend/src/i18n/locales/zh.ts        |  9 ++++-
+ frontend/src/views/user/RedeemView.vue | 49 ++++++++++++++++++++++++++
+ 3 files changed, 65 insertions(+), 2 deletions(-)
+
+diff --git a/frontend/src/i18n/locales/en.ts b/frontend/src/i18n/locales/en.ts
+index e293491..3f2944d 100644
+--- a/frontend/src/i18n/locales/en.ts
++++ b/frontend/src/i18n/locales/en.ts
+@@ -524,7 +524,14 @@ export default {
+     codeRedeemSuccess: 'Code redeemed successfully!',
+     failedToRedeem: 'Failed to redeem code. Please check the code and try again.',
+     subscriptionRefreshFailed: 'Redeemed successfully, but failed to refresh subscription status.',
+-    pleaseEnterCode: 'Please enter a redeem code'
++    pleaseEnterCode: 'Please enter a redeem code',
++    // Online Recharge
++    onlineRecharge: 'Online Recharge',
++    onlineRechargeDesc: 'Instantly top up your balance with credit or debit card',
++    rechargeNow: 'Recharge Now',
++    rechargeFeature1: 'Supports Visa, MasterCard, UnionPay and more',
++    rechargeFeature2: 'Pay $1 and get $10 balance',
++    rechargeFeature3: 'Instant credit, secure payment'
+   },
+ 
+   // Profile
+diff --git a/frontend/src/i18n/locales/zh.ts b/frontend/src/i18n/locales/zh.ts
+index dbeb381..45b38f2 100644
+--- a/frontend/src/i18n/locales/zh.ts
++++ b/frontend/src/i18n/locales/zh.ts
+@@ -520,7 +520,14 @@ export default {
+     codeRedeemSuccess: '兑换成功！',
+     failedToRedeem: '兑换失败，请检查兑换码后重试。',
+     subscriptionRefreshFailed: '兑换成功，但订阅状态刷新失败。',
+-    pleaseEnterCode: '请输入兑换码'
++    pleaseEnterCode: '请输入兑换码',
++    // 在线充值
++    onlineRecharge: '在线充值',
++    onlineRechargeDesc: '使用信用卡或借记卡即时充值余额',
++    rechargeNow: '立即充值',
++    rechargeFeature1: '支持 Visa、MasterCard、银联等主流卡',
++    rechargeFeature2: '支付 $1 即可获得 $10 余额',
++    rechargeFeature3: '即时到账，安全可靠'
+   },
+ 
+   // Profile
+diff --git a/frontend/src/views/user/RedeemView.vue b/frontend/src/views/user/RedeemView.vue
+index 9615859..6244336 100644
+--- a/frontend/src/views/user/RedeemView.vue
++++ b/frontend/src/views/user/RedeemView.vue
+@@ -19,6 +19,49 @@
+         </div>
+       </div>
+ 
++      <!-- Online Recharge Card -->
++      <div class="card overflow-hidden border-2 border-emerald-200 dark:border-emerald-800/50">
++        <div class="p-6">
++          <div class="flex items-start gap-4">
++            <div
++              class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30"
++            >
++              <Icon name="dollar" size="lg" class="text-emerald-600 dark:text-emerald-400" />
++            </div>
++            <div class="flex-1">
++              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
++                {{ t('redeem.onlineRecharge') }}
++              </h3>
++              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
++                {{ t('redeem.onlineRechargeDesc') }}
++              </p>
++              <ul class="mt-3 space-y-1.5 text-sm text-gray-600 dark:text-dark-300">
++                <li class="flex items-center gap-2">
++                  <Icon name="check" size="sm" class="text-emerald-500" />
++                  {{ t('redeem.rechargeFeature1') }}
++                </li>
++                <li class="flex items-center gap-2">
++                  <Icon name="check" size="sm" class="text-emerald-500" />
++                  {{ t('redeem.rechargeFeature2') }}
++                </li>
++                <li class="flex items-center gap-2">
++                  <Icon name="check" size="sm" class="text-emerald-500" />
++                  {{ t('redeem.rechargeFeature3') }}
++                </li>
++              </ul>
++              <a
++                :href="rechargeUrl"
++                target="_blank"
++                class="btn btn-primary mt-4 inline-flex items-center gap-2"
++              >
++                <Icon name="externalLink" size="sm" />
++                {{ t('redeem.rechargeNow') }}
++              </a>
++            </div>
++          </div>
++        </div>
++      </div>
++
+       <!-- Redeem Form -->
+       <div class="card">
+         <div class="p-6">
+@@ -351,6 +394,12 @@ const subscriptionStore = useSubscriptionStore()
+ 
+ const user = computed(() => authStore.user)
+ 
++// 在线充值 URL，带上用户邮箱
++const rechargeUrl = computed(() => {
++  const email = user.value?.email || ''
++  return `https://pay.hbf.ink/?email=${encodeURIComponent(email)}`
++})
++
+ const redeemCode = ref('')
+ const submitting = ref(false)
+ const redeemResult = ref<{
+-- 
+2.40.1.windows.1
+

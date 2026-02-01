@@ -305,6 +305,19 @@ func (s *GatewayService) BindStickySession(ctx context.Context, groupID *int64, 
 	return s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, accountID, stickySessionTTL)
 }
 
+// GetCachedSessionAccountID retrieves the account ID bound to a sticky session.
+// Returns 0 if no binding exists or on error.
+func (s *GatewayService) GetCachedSessionAccountID(ctx context.Context, groupID *int64, sessionHash string) (int64, error) {
+	if sessionHash == "" || s.cache == nil {
+		return 0, nil
+	}
+	accountID, err := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+	if err != nil {
+		return 0, err
+	}
+	return accountID, nil
+}
+
 func (s *GatewayService) extractCacheableContent(parsed *ParsedRequest) string {
 	if parsed == nil {
 		return ""
@@ -2253,6 +2266,36 @@ func removeCacheControlFromThinkingBlocks(data map[string]any) {
 	}
 }
 
+
+// renameBlockedToolsForSetupToken 对于 setup-token 账号，重命名被 Anthropic 禁止的 tool 名称
+func renameBlockedToolsForSetupToken(body []byte) []byte {
+	toolsResult := gjson.GetBytes(body, "tools")
+	if !toolsResult.Exists() || !toolsResult.IsArray() {
+		return body
+	}
+	modified := body
+	for i, tool := range toolsResult.Array() {
+		name := tool.Get("name").String()
+		if newName, blocked := claude.SetupTokenBlockedTools[name]; blocked {
+			var err error
+			modified, err = sjson.SetBytes(modified, fmt.Sprintf("tools.%d.name", i), newName)
+			if err != nil {
+				continue
+			}
+		}
+	}
+	return modified
+}
+
+// restoreBlockedToolNamesInResponse 在响应中还原被重命名的 tool 名称
+func restoreBlockedToolNamesInResponse(data []byte) []byte {
+	result := data
+	for newName, oldName := range claude.SetupTokenBlockedToolsReverse {
+		result = bytes.ReplaceAll(result, []byte(newName), []byte(oldName))
+	}
+	return result
+}
+
 // Forward 转发请求到Claude API
 func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
 	startTime := time.Now()
@@ -2287,6 +2330,15 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			log.Printf("Model mapping applied: %s -> %s (account: %s)", originalModel, mappedModel, account.Name)
 		}
 	}
+
+	// setup-token 账号：重命名被禁止的 tool 名称
+	// Anthropic 对 setup-token 有 tool 名称黑名单限制（如 read_file, read, write, bash）
+	needRestoreToolNames := false
+	if account.Type == AccountTypeSetupToken {
+		body = renameBlockedToolsForSetupToken(body)
+		needRestoreToolNames = true
+	}
+	ctx = context.WithValue(ctx, ctxkey.NeedRestoreToolNames, needRestoreToolNames)
 
 	// 获取凭证
 	token, tokenType, err := s.GetAccessToken(ctx, account)
@@ -2750,7 +2802,16 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// 处理anthropic-beta header（OAuth账号需要特殊处理）
 	if tokenType == "oauth" {
-		req.Header.Set("anthropic-beta", s.getBetaHeader(modelID, c.GetHeader("anthropic-beta")))
+		clientBeta := c.GetHeader("anthropic-beta")
+		// setup-token 账号：确保包含 claude-code header
+		if account.Type == AccountTypeSetupToken && !strings.Contains(clientBeta, claude.BetaClaudeCode) {
+			if clientBeta != "" {
+				clientBeta = claude.BetaClaudeCode + "," + clientBeta
+			} else {
+				clientBeta = claude.BetaClaudeCode
+			}
+		}
+		req.Header.Set("anthropic-beta", s.getBetaHeader(modelID, clientBeta))
 	} else if s.cfg != nil && s.cfg.Gateway.InjectBetaForAPIKey && req.Header.Get("anthropic-beta") == "" {
 		// API-key：仅在请求显式使用 beta 特性且客户端未提供时，按需补齐（默认关闭）
 		if requestNeedsBetaFeatures(body) {
@@ -3254,6 +3315,11 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				}
 			}
 
+			// setup-token 账号：还原被重命名的 tool 名称
+			if needRestore, _ := ctx.Value(ctxkey.NeedRestoreToolNames).(bool); needRestore {
+				line = string(restoreBlockedToolNamesInResponse([]byte(line)))
+			}
+
 			// 写入客户端（统一处理 data 行和非 data 行）
 			if !clientDisconnected {
 				if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
@@ -3359,19 +3425,12 @@ func (s *GatewayService) parseSSEUsage(data string, usage *ClaudeUsage) {
 		} `json:"usage"`
 	}
 	if json.Unmarshal([]byte(data), &msgDelta) == nil && msgDelta.Type == "message_delta" {
-		// output_tokens 总是从 message_delta 获取
+		// message_delta 是推理结束后的最终统计，应完全覆盖 message_start 的数据
+		// 这对于 Claude API 和 GLM 等兼容 API 都是正确的行为
+		usage.InputTokens = msgDelta.Usage.InputTokens
 		usage.OutputTokens = msgDelta.Usage.OutputTokens
-
-		// 如果 message_start 中没有值，则从 message_delta 获取（兼容GLM等API）
-		if usage.InputTokens == 0 {
-			usage.InputTokens = msgDelta.Usage.InputTokens
-		}
-		if usage.CacheCreationInputTokens == 0 {
-			usage.CacheCreationInputTokens = msgDelta.Usage.CacheCreationInputTokens
-		}
-		if usage.CacheReadInputTokens == 0 {
-			usage.CacheReadInputTokens = msgDelta.Usage.CacheReadInputTokens
-		}
+		usage.CacheCreationInputTokens = msgDelta.Usage.CacheCreationInputTokens
+		usage.CacheReadInputTokens = msgDelta.Usage.CacheReadInputTokens
 	}
 }
 
@@ -3395,6 +3454,10 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	// 如果有模型映射，替换响应中的model字段
 	if originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
+	}
+	// setup-token 账号：还原被重命名的 tool 名称
+	if needRestore, _ := ctx.Value(ctxkey.NeedRestoreToolNames).(bool); needRestore {
+		body = restoreBlockedToolNamesInResponse(body)
 	}
 
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.cfg.Security.ResponseHeaders)

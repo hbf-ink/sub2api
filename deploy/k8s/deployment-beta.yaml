@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sub2api-beta
+  labels:
+    app: sub2api-beta
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: sub2api-beta
+  template:
+    metadata:
+      labels:
+        app: sub2api-beta
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: sub2api
+          image: ghcr.io/hbf-ink/sub2api:beta
+          ports:
+            - containerPort: 8080
+          env:
+            - name: RUN_MODE
+              value: standard
+            - name: TZ
+              value: Asia/Shanghai
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: sub2api-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sub2api-beta
+spec:
+  selector:
+    app: sub2api-beta
+  ports:
+    - port: 8080
+      targetPort: 8080

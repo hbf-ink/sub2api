@@ -1,0 +1,39 @@
+# Sub2API Ansible Inventory
+# 节点配置
+
+all:
+  vars:
+    ansible_user: root
+    ansible_python_interpreter: /usr/bin/python3
+    sub2api_image: ghcr.io/hbf-ink/sub2api
+    sub2api_tag: latest
+    domain: hbf.ink
+
+  children:
+    # 所有 sub2api 节点
+    sub2api_nodes:
+      hosts:
+        calvin-hk-loc:
+          ansible_host: 149.104.8.233
+          ansible_port: 46182
+          node_region: hk
+          node_provider: loc
+          node_beta: false
+        
+        calvin-jp-zeabur:
+          ansible_host: 43.163.210.42
+          ansible_port: 22
+          ansible_user: ubuntu
+          node_region: jp
+          node_provider: zeabur
+          node_beta: true
+    
+    # 主控节点（运行 Ansible）
+    controllers:
+      hosts:
+        calvin-jp-zeabur:
+    
+    # Beta 环境节点
+    beta_nodes:
+      hosts:
+        calvin-jp-zeabur:

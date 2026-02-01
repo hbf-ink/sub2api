@@ -191,12 +191,18 @@ func (s *CreemService) VerifyWebhookSignature(ctx context.Context, payload []byt
 		return true
 	}
 
-	mac := hmac.New(sha256.New, []byte(cfg.WebhookSecret))
+	// 获取 secret，去掉可能的 whsec_ 前缀
+	secret := cfg.WebhookSecret
+	secret = strings.TrimPrefix(secret, "whsec_")
+
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
 
 	// 移除 "sha256=" 前缀（如果存在）
 	signature = strings.TrimPrefix(signature, "sha256=")
+
+	log.Printf("[Creem] Signature verification: received=%s expected=%s", signature, expectedSig)
 
 	return hmac.Equal([]byte(expectedSig), []byte(signature))
 }

@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sub2api
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - hbf.ink
+        - beta.hbf.ink
+      secretName: hbf-ink-tls
+  rules:
+    - host: hbf.ink
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sub2api
+                port:
+                  number: 8080
+    - host: beta.hbf.ink
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sub2api-beta
+                port:
+                  number: 8080
