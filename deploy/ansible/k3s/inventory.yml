@@ -1,20 +1,19 @@
-# K3s 集群节点清单
-# 使用前请修改 ansible_host 和 ansible_ssh_pass
+# K3s 集群节点清单 (使用 SSH Key 认证)
 
 all:
   children:
     ops:
       hosts:
         ops-tokyo-01:
-          ansible_host: 43.163.241.60      # 运维机 IP
-          ansible_user: ubuntu
+          ansible_connection: local
           ansible_become: yes
-          # ansible_ssh_pass: "your-password"  # 或使用 SSH key
+          wireguard_ip: "10.10.0.1"
           node_role: ops
     prod:
       hosts:
         prod-tokyo-01:
-          ansible_host: 8.209.245.253      # 业务机 IP
+          ansible_host: 8.209.245.253
           ansible_user: root
-          # ansible_ssh_pass: "your-password"  # 或使用 SSH key
+          ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+          wireguard_ip: "10.10.0.2"
           node_role: prod

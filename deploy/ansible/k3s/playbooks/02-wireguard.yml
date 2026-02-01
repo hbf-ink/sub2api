@@ -1,0 +1,188 @@
+---
+# WireGuard 组网 - 运维机作为服务端
+- name: 安装 WireGuard (所有节点)
+  hosts: all
+  become: yes
+  tasks:
+    - name: 安装 WireGuard
+      apt:
+        name: wireguard
+        state: present
+        update_cache: yes
+
+- name: 配置 WireGuard Server (运维机)
+  hosts: ops
+  become: yes
+  vars:
+    wg_server_ip: "10.10.0.1"
+    wg_port: 51820
+  tasks:
+    - name: 生成服务端私钥
+      shell: wg genkey
+      register: server_private_key
+      args:
+        creates: /etc/wireguard/private.key
+
+    - name: 保存私钥到文件
+      copy:
+        content: "{{ server_private_key.stdout }}"
+        dest: /etc/wireguard/private.key
+        mode: '0600'
+      when: server_private_key.changed
+
+    - name: 读取私钥
+      slurp:
+        src: /etc/wireguard/private.key
+      register: server_privkey_file
+
+    - name: 生成公钥
+      shell: cat /etc/wireguard/private.key | wg pubkey
+      register: server_public_key
+      changed_when: false
+
+    - name: 保存服务端信息到 facts
+      set_fact:
+        wg_server_private_key: "{{ server_privkey_file.content | b64decode | trim }}"
+        wg_server_public_key: "{{ server_public_key.stdout | trim }}"
+        wg_server_endpoint: "{{ ansible_host }}:{{ wg_port }}"
+
+    - name: 显示服务端公钥
+      debug:
+        msg: "Server Public Key: {{ wg_server_public_key }}"
+
+- name: 配置 WireGuard Client (业务机)
+  hosts: prod
+  become: yes
+  vars:
+    wg_client_ip: "10.10.0.2"
+  tasks:
+    - name: 生成客户端私钥
+      shell: wg genkey
+      register: client_private_key
+      args:
+        creates: /etc/wireguard/private.key
+
+    - name: 保存私钥到文件
+      copy:
+        content: "{{ client_private_key.stdout }}"
+        dest: /etc/wireguard/private.key
+        mode: '0600'
+      when: client_private_key.changed
+
+    - name: 读取私钥
+      slurp:
+        src: /etc/wireguard/private.key
+      register: client_privkey_file
+
+    - name: 生成公钥
+      shell: cat /etc/wireguard/private.key | wg pubkey
+      register: client_public_key
+      changed_when: false
+
+    - name: 保存客户端信息到 facts
+      set_fact:
+        wg_client_private_key: "{{ client_privkey_file.content | b64decode | trim }}"
+        wg_client_public_key: "{{ client_public_key.stdout | trim }}"
+
+    - name: 显示客户端公钥
+      debug:
+        msg: "Client Public Key: {{ wg_client_public_key }}"
+
+- name: 生成 WireGuard 配置文件
+  hosts: ops
+  become: yes
+  vars:
+    wg_server_ip: "10.10.0.1"
+    wg_client_ip: "10.10.0.2"
+    wg_port: 51820
+  tasks:
+    - name: 生成服务端配置
+      copy:
+        content: |
+          [Interface]
+          PrivateKey = {{ wg_server_private_key }}
+          Address = {{ wg_server_ip }}/24
+          ListenPort = {{ wg_port }}
+          PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+          PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+          [Peer]
+          # prod-tokyo-01
+          PublicKey = {{ hostvars['prod-tokyo-01']['wg_client_public_key'] }}
+          AllowedIPs = {{ wg_client_ip }}/32
+        dest: /etc/wireguard/wg0.conf
+        mode: '0600'
+
+    - name: 启用 IP 转发
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_set: yes
+        reload: yes
+
+    - name: 启动 WireGuard
+      systemd:
+        name: wg-quick@wg0
+        state: restarted
+        enabled: yes
+
+    - name: 保存 WireGuard IP 到 fact
+      set_fact:
+        wireguard_ip: "{{ wg_server_ip }}"
+
+- name: 配置并启动 WireGuard Client
+  hosts: prod
+  become: yes
+  vars:
+    wg_server_ip: "10.10.0.1"
+    wg_client_ip: "10.10.0.2"
+    wg_port: 51820
+  tasks:
+    - name: 生成客户端配置
+      copy:
+        content: |
+          [Interface]
+          PrivateKey = {{ wg_client_private_key }}
+          Address = {{ wg_client_ip }}/24
+
+          [Peer]
+          # ops-tokyo-01
+          PublicKey = {{ hostvars['ops-tokyo-01']['wg_server_public_key'] }}
+          Endpoint = {{ hostvars['ops-tokyo-01']['ansible_host'] }}:{{ wg_port }}
+          AllowedIPs = {{ wg_server_ip }}/32
+          PersistentKeepalive = 25
+        dest: /etc/wireguard/wg0.conf
+        mode: '0600'
+
+    - name: 启动 WireGuard
+      systemd:
+        name: wg-quick@wg0
+        state: restarted
+        enabled: yes
+
+    - name: 保存 WireGuard IP 到 fact
+      set_fact:
+        wireguard_ip: "{{ wg_client_ip }}"
+
+- name: 验证 WireGuard 连通性
+  hosts: ops
+  become: yes
+  tasks:
+    - name: 等待连接建立
+      pause:
+        seconds: 3
+
+    - name: 测试到业务机的连通性
+      shell: ping -c 3 10.10.0.2
+      register: ping_result
+      retries: 3
+      delay: 5
+      until: ping_result.rc == 0
+
+    - name: 显示 WireGuard 状态
+      shell: wg show
+      register: wg_status
+
+    - name: 输出状态
+      debug:
+        var: wg_status.stdout_lines

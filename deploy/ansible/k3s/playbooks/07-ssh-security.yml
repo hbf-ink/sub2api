@@ -4,7 +4,7 @@
   hosts: prod
   become: yes
   vars:
-    ops_tailscale_ip: "{{ hostvars['ops-tokyo-01']['tailscale_ip'] }}"
+    ops_wg_ip: "10.10.0.1"
   tasks:
     - name: 安装 UFW
       apt:
@@ -20,14 +20,17 @@
     - name: 默认允许出站
       shell: ufw default allow outgoing
 
-    - name: 允许运维机 SSH 访问 (Tailscale)
-      shell: ufw allow from {{ ops_tailscale_ip }} to any port 22
+    - name: 允许运维机 SSH 访问 (WireGuard)
+      shell: ufw allow from {{ ops_wg_ip }} to any port 22
 
     - name: 临时保留公网 SSH (防止被锁)
       shell: ufw allow 22/tcp
 
-    - name: 允许 K3s Agent 端口
-      shell: ufw allow from {{ ops_tailscale_ip }} to any port 10250
+    - name: 允许 WireGuard 端口
+      shell: ufw allow 51820/udp
+
+    - name: 允许 K3s Agent 端口 (从运维机)
+      shell: ufw allow from {{ ops_wg_ip }} to any port 10250
 
     - name: 允许 HTTP/HTTPS
       shell: |
@@ -66,6 +69,9 @@
     - name: 允许 SSH
       shell: ufw allow 22/tcp
 
+    - name: 允许 WireGuard
+      shell: ufw allow 51820/udp
+
     - name: 允许 K3s API
       shell: ufw allow 6443/tcp
 
@@ -74,9 +80,6 @@
 
     - name: 允许 Next Terminal
       shell: ufw allow 30088/tcp
-
-    - name: 允许 Tailscale
-      shell: ufw allow 41641/udp
 
     - name: 启用 UFW
       shell: ufw --force enable

@@ -1,0 +1,276 @@
+---
+# 统一认证 + 运维首页
+# 自动使用 SOPS 解密 secrets.enc.yml
+
+- name: 部署统一认证和运维首页
+  hosts: ops
+  become: yes
+  vars:
+    ops_domain: "ops.hbf.ink"
+    acme_email: "calvinaistudio@gmail.com"
+    secrets: "{{ lookup('community.sops.sops', playbook_dir + '/../secrets.enc.yml') | from_yaml }}"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    SOPS_AGE_SSH_PRIVATE_KEY_FILE: "{{ ansible_env.HOME }}/.ssh/id_ed25519"
+  tasks:
+    - name: 创建 ops namespace
+      shell: kubectl create namespace ops --dry-run=client -o yaml | kubectl apply -f -
+
+    # ============ LLDAP ============
+    - name: 创建 LLDAP 数据目录
+      file:
+        path: /data/lldap
+        state: directory
+        mode: '0755'
+
+    - name: 部署 LLDAP
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: lldap-secrets
+          namespace: ops
+        type: Opaque
+        stringData:
+          LLDAP_JWT_SECRET: "{{ secrets.ops.lldap_jwt_secret }}"
+          LLDAP_LDAP_USER_PASS: "{{ secrets.ops.lldap_admin_password }}"
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: lldap
+          namespace: ops
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: lldap
+          template:
+            metadata:
+              labels:
+                app: lldap
+            spec:
+              containers:
+              - name: lldap
+                image: lldap/lldap:stable
+                ports:
+                - containerPort: 3890
+                  name: ldap
+                - containerPort: 17170
+                  name: web
+                env:
+                - name: LLDAP_LDAP_BASE_DN
+                  value: "dc=ops,dc=hbf,dc=ink"
+                - name: LLDAP_JWT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: lldap-secrets
+                      key: LLDAP_JWT_SECRET
+                - name: LLDAP_LDAP_USER_PASS
+                  valueFrom:
+                    secretKeyRef:
+                      name: lldap-secrets
+                      key: LLDAP_LDAP_USER_PASS
+                volumeMounts:
+                - name: data
+                  mountPath: /data
+              volumes:
+              - name: data
+                hostPath:
+                  path: /data/lldap
+                  type: DirectoryOrCreate
+              nodeSelector:
+                node-role: ops
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: lldap
+          namespace: ops
+        spec:
+          selector:
+            app: lldap
+          ports:
+          - name: ldap
+            port: 3890
+          - name: web
+            port: 17170
+        EOF
+
+    # ============ Homarr ============
+    - name: 创建 Homarr 数据目录
+      file:
+        path: /data/homarr
+        state: directory
+        mode: '0755'
+
+    - name: 部署 Homarr
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: homarr
+          namespace: ops
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: homarr
+          template:
+            metadata:
+              labels:
+                app: homarr
+            spec:
+              containers:
+              - name: homarr
+                image: ghcr.io/ajnart/homarr:latest
+                ports:
+                - containerPort: 7575
+                volumeMounts:
+                - name: data
+                  mountPath: /appdata
+              volumes:
+              - name: data
+                hostPath:
+                  path: /data/homarr
+                  type: DirectoryOrCreate
+              nodeSelector:
+                node-role: ops
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: homarr
+          namespace: ops
+        spec:
+          selector:
+            app: homarr
+          ports:
+          - port: 7575
+        EOF
+
+    # ============ Cert-Manager ClusterIssuer ============
+    - name: 等待 cert-manager webhook 就绪
+      shell: kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
+      retries: 3
+      delay: 10
+
+    - name: 创建 ClusterIssuer
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: cert-manager.io/v1
+        kind: ClusterIssuer
+        metadata:
+          name: letsencrypt-prod
+        spec:
+          acme:
+            server: https://acme-v02.api.letsencrypt.org/directory
+            email: {{ acme_email }}
+            privateKeySecretRef:
+              name: letsencrypt-prod-key
+            solvers:
+            - http01:
+                ingress:
+                  class: traefik
+        EOF
+      retries: 5
+      delay: 15
+
+    # ============ Ingress ============
+    - name: 开放 80/443 端口
+      shell: ufw allow 80/tcp; ufw allow 443/tcp
+
+    - name: 创建跨 namespace Service
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: grafana-external
+          namespace: ops
+        spec:
+          type: ExternalName
+          externalName: grafana.monitoring.svc.cluster.local
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: terminal-external
+          namespace: ops
+        spec:
+          type: ExternalName
+          externalName: next-terminal.bastion.svc.cluster.local
+        EOF
+
+    - name: 部署 Ingress
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: ops-ingress
+          namespace: ops
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+        spec:
+          ingressClassName: traefik
+          tls:
+          - hosts:
+            - {{ ops_domain }}
+            secretName: ops-tls
+          rules:
+          - host: {{ ops_domain }}
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: homarr
+                    port:
+                      number: 7575
+              - path: /lldap
+                pathType: Prefix
+                backend:
+                  service:
+                    name: lldap
+                    port:
+                      number: 17170
+              - path: /grafana
+                pathType: Prefix
+                backend:
+                  service:
+                    name: grafana-external
+                    port:
+                      number: 80
+              - path: /terminal
+                pathType: Prefix
+                backend:
+                  service:
+                    name: terminal-external
+                    port:
+                      number: 8088
+        EOF
+
+    # ============ 等待部署完成 ============
+    - name: 等待 Pod 就绪
+      shell: |
+        kubectl wait --for=condition=Ready pod -l app=lldap -n ops --timeout=120s
+        kubectl wait --for=condition=Ready pod -l app=homarr -n ops --timeout=120s
+      retries: 3
+      delay: 10
+
+    - name: 显示状态
+      shell: |
+        echo "=== Pods ===" && kubectl get pods -n ops
+        echo "=== Ingress ===" && kubectl get ingress -n ops
+        echo ""
+        echo "访问: https://{{ ops_domain }}"
+        echo "LLDAP: https://{{ ops_domain }}/lldap (admin / {{ secrets.ops.lldap_admin_password }})"
+      register: status
+
+    - name: 输出
+      debug:
+        var: status.stdout_lines

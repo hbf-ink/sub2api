@@ -4,13 +4,13 @@
   hosts: ops
   become: yes
   tasks:
-    - name: 安装 K3s Server (使用 Tailscale IP)
+    - name: 安装 K3s Server (使用 WireGuard IP)
       shell: |
         curl -sfL https://get.k3s.io | sh -s - \
           --write-kubeconfig-mode 644 \
-          --node-ip {{ tailscale_ip }} \
-          --advertise-address {{ tailscale_ip }} \
-          --flannel-iface tailscale0
+          --node-ip {{ wireguard_ip }} \
+          --advertise-address {{ wireguard_ip }} \
+          --flannel-iface wg0
       args:
         creates: /usr/local/bin/k3s
 
@@ -30,8 +30,12 @@
       set_fact:
         k3s_join_token: "{{ k3s_token.content | b64decode | trim }}"
 
+    - name: 获取实际节点名称
+      shell: kubectl get nodes -o jsonpath='{.items[0].metadata.name}'
+      register: actual_node_name
+
     - name: 给节点打标签
-      shell: kubectl label node {{ ansible_hostname }} node-role=ops --overwrite
+      shell: kubectl label node {{ actual_node_name.stdout }} node-role=ops --overwrite
 
     - name: 安装 Helm
       shell: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash

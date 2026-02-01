@@ -9,8 +9,8 @@
 - name: 基础环境初始化
   import_playbook: playbooks/01-base.yml
 
-- name: Tailscale 组网
-  import_playbook: playbooks/02-tailscale.yml
+- name: WireGuard 组网
+  import_playbook: playbooks/02-wireguard.yml
 
 - name: K3s Server (运维机)
   import_playbook: playbooks/03-k3s-server.yml
@@ -26,3 +26,6 @@
 
 - name: SSH 安全加固
   import_playbook: playbooks/07-ssh-security.yml
+
+- name: Ingress 和自动 HTTPS
+  import_playbook: playbooks/08-ingress.yml
