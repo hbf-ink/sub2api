@@ -134,8 +134,10 @@
                 ports:
                 - containerPort: 7575
                 env:
-                - name: DISABLE_UPGRADE_MODAL
-                  value: "true"
+                - name: SECRET_ENCRYPTION_KEY
+                  value: "{{ secrets.ops.homarr_secret_key | default(lookup('pipe', 'openssl rand -hex 32')) }}"
+                - name: AUTH_SECRET
+                  value: "{{ secrets.ops.homarr_auth_secret | default(lookup('pipe', 'openssl rand -hex 32')) }}"
                 volumeMounts:
                 - name: data
                   mountPath: /appdata
