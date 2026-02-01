@@ -161,7 +161,11 @@
               UserFilter: "(uid={0})"
               AdminGroupDn: "cn=lldap_admin,ou=groups,{{ ldap_base_dn }}"
             App:
+              Recording:
+                Type: local
+                Path: /usr/local/next-terminal/data/recordings
               Guacd:
+                Drive: /usr/local/next-terminal/data/drive
                 Hosts:
                   - Hostname: guacd
                     Port: 4822
