@@ -32,6 +32,8 @@
         /usr/local/bin/k3s-uninstall.sh 2>/dev/null || true
         /usr/local/bin/k3s-agent-uninstall.sh 2>/dev/null || true
         rm -rf /var/lib/rancher /etc/rancher
+        # 清理 Zeabur 的 systemd override (会禁用 traefik)
+        rm -rf /etc/systemd/system/k3s.service.d 2>/dev/null || true
       ignore_errors: yes
 
 # Ops 节点额外依赖
