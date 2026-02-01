@@ -4,13 +4,10 @@
   hosts: ops
   become: yes
   tasks:
-    - name: 安装 K3s Server (使用 WireGuard IP)
+    - name: 安装 K3s Server
       shell: |
         curl -sfL https://get.k3s.io | sh -s - \
-          --write-kubeconfig-mode 644 \
-          --node-ip {{ wireguard_ip }} \
-          --advertise-address {{ wireguard_ip }} \
-          --flannel-iface wg0
+          --write-kubeconfig-mode 644
       args:
         creates: /usr/local/bin/k3s
 

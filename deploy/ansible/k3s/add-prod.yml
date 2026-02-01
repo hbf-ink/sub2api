@@ -1,0 +1,26 @@
+---
+# 添加 Prod 节点到集群
+# 
+# 前置条件: ops 已部署完成
+# 用法: ansible-playbook -i inventory.yml add-prod.yml
+#
+# inventory.yml 中需要配置 prod 节点:
+#   prod:
+#     hosts:
+#       prod-tokyo-01:
+#         ansible_host: <prod_ip>
+#         ansible_user: root
+#         wireguard_ip: 10.10.0.2
+
+- name: Prod 基础环境
+  import_playbook: playbooks/01-base.yml
+  when: "'prod' in groups"
+
+- name: WireGuard 组网
+  import_playbook: playbooks/02-wireguard.yml
+
+- name: K3s Agent
+  import_playbook: playbooks/04-k3s-agent.yml
+
+- name: SSH 安全加固
+  import_playbook: playbooks/07-ssh-security.yml

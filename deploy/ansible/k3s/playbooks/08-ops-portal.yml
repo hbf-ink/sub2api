@@ -156,11 +156,16 @@
           - port: 7575
         EOF
 
-    # ============ Cert-Manager ClusterIssuer ============
+    # ============ Cert-Manager ============
+    - name: 安装 cert-manager
+      shell: |
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
+      register: cert_manager_install
+
     - name: 等待 cert-manager webhook 就绪
-      shell: kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
-      retries: 3
-      delay: 10
+      shell: kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=180s
+      retries: 5
+      delay: 15
 
     - name: 创建 ClusterIssuer
       shell: |

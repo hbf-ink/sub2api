@@ -1,19 +1,14 @@
-# K3s 集群节点清单 (使用 SSH Key 认证)
-
 all:
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=accept-new'
   children:
     ops:
       hosts:
         ops-tokyo-01:
-          ansible_connection: local
-          ansible_become: yes
-          wireguard_ip: "10.10.0.1"
+          ansible_host: 43.163.241.60
+          ansible_password: nl(@zQ>~%rMRYt34^V
           node_role: ops
+          wireguard_ip: 10.10.0.1
     prod:
-      hosts:
-        prod-tokyo-01:
-          ansible_host: 8.209.245.253
-          ansible_user: root
-          ansible_ssh_private_key_file: ~/.ssh/id_ed25519
-          wireguard_ip: "10.10.0.2"
-          node_role: prod
+      hosts: {}

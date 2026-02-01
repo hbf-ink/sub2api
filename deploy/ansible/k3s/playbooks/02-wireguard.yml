@@ -1,5 +1,5 @@
 ---
-# WireGuard 组网 - 运维机作为服务端
+# WireGuard 组网 - 支持单节点或多节点部署
 - name: 安装 WireGuard (所有节点)
   hosts: all
   become: yes
@@ -88,7 +88,7 @@
       debug:
         msg: "Client Public Key: {{ wg_client_public_key }}"
 
-- name: 生成 WireGuard 配置文件
+- name: 生成 WireGuard 配置文件 (Server)
   hosts: ops
   become: yes
   vars:
@@ -96,7 +96,11 @@
     wg_client_ip: "10.10.0.2"
     wg_port: 51820
   tasks:
-    - name: 生成服务端配置
+    - name: 检查是否有 prod 节点
+      set_fact:
+        has_prod: "{{ groups['prod'] | default([]) | length > 0 }}"
+
+    - name: 生成服务端配置 (有 prod)
       copy:
         content: |
           [Interface]
@@ -112,6 +116,22 @@
           AllowedIPs = {{ wg_client_ip }}/32
         dest: /etc/wireguard/wg0.conf
         mode: '0600'
+      when: has_prod
+
+    - name: 生成服务端配置 (无 prod，仅 ops)
+      copy:
+        content: |
+          [Interface]
+          PrivateKey = {{ wg_server_private_key }}
+          Address = {{ wg_server_ip }}/24
+          ListenPort = {{ wg_port }}
+          PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+          PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+          # Peers will be added when prod nodes join
+        dest: /etc/wireguard/wg0.conf
+        mode: '0600'
+      when: not has_prod
 
     - name: 启用 IP 转发
       sysctl:
@@ -168,9 +188,14 @@
   hosts: ops
   become: yes
   tasks:
+    - name: 检查是否有 prod 节点
+      set_fact:
+        has_prod: "{{ groups['prod'] | default([]) | length > 0 }}"
+
     - name: 等待连接建立
       pause:
         seconds: 3
+      when: has_prod
 
     - name: 测试到业务机的连通性
       shell: ping -c 3 10.10.0.2
@@ -178,6 +203,7 @@
       retries: 3
       delay: 5
       until: ping_result.rc == 0
+      when: has_prod
 
     - name: 显示 WireGuard 状态
       shell: wg show

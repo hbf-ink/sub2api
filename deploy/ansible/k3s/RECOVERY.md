@@ -1,151 +1,139 @@
-# K3s 集群一键恢复指南
+# Sub2API K3s 集群恢复指南
 
-## 前置条件
+## 快速恢复
 
-1. **新服务器**: Ubuntu 24.04，已配置 SSH 访问
-2. **本地环境**: 
-   - SSH 私钥 `~/.ssh/id_ed25519`（用于 SOPS 解密和 SSH 连接）
-   - 安装 `sshpass`（WSL 下）
-
-## 恢复步骤
-
-### 1. 更新 inventory.yml
-
-修改 `deploy/ansible/k3s/inventory.yml` 中的 IP 地址：
-
-```yaml
-all:
-  children:
-    ops:
-      hosts:
-        ops-tokyo-01:
-          ansible_host: <新运维机IP>
-          ...
-    prod:
-      hosts:
-        prod-tokyo-01:
-          ansible_host: <新业务机IP>
-          ...
-```
-
-### 2. 上传文件到运维机
+### 方式一：在 ops 机器上直接恢复（推荐）
 
 ```bash
-# 清除旧的 SSH host key
-ssh-keygen -R <新运维机IP>
-ssh-keygen -R <新业务机IP>
+# 1. SSH 到新的 ops 机器
+ssh ubuntu@<ops_ip>
 
-# 上传 SSH 私钥（用于 SOPS 解密和连接业务机）
-scp ~/.ssh/id_ed25519 ubuntu@<运维机IP>:~/.ssh/
-ssh ubuntu@<运维机IP> 'chmod 600 ~/.ssh/id_ed25519'
+# 2. 恢复 SSH 私钥（用于 SOPS 解密）
+# 从 R2 备份下载，或从其他安全位置获取
+mkdir -p ~/.ssh
+# 方法A: 从 R2
+rclone copy r2:hbf-backup/keys/id_ed25519 ~/.ssh/
+# 方法B: 从本地上传
+# scp ~/.ssh/id_ed25519 ubuntu@<ops_ip>:~/.ssh/
+chmod 600 ~/.ssh/id_ed25519
 
-# 上传 Ansible 文件
-scp -r deploy/ansible/k3s/* ubuntu@<运维机IP>:~/ansible/k3s/
+# 3. 克隆仓库并恢复
+git clone git@github.com:hbf-ink/sub2api.git
+cd sub2api/deploy/ansible/k3s
+chmod +x local-recover.sh
+./local-recover.sh              # 只恢复 ops
+./local-recover.sh <prod_ip>    # 恢复 ops + prod
 ```
 
-### 3. 安装依赖（运维机）
+### 方式二：从任意机器远程恢复
 
 ```bash
-ssh ubuntu@<运维机IP>
+# 1. 克隆仓库
+git clone git@github.com:hbf-ink/sub2api.git
+cd sub2api/deploy/ansible/k3s
 
-# 安装 Ansible 和 SOPS
-sudo apt update && sudo apt install -y ansible sshpass
-curl -LO https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64
-chmod +x sops-v3.9.4.linux.amd64 && sudo mv sops-v3.9.4.linux.amd64 /usr/local/bin/sops
+# 2. 确保本机有 SSH 私钥 ~/.ssh/id_ed25519
 
-# 安装 Ansible SOPS 插件
-ansible-galaxy collection install community.sops
+# 3. 执行恢复
+chmod +x recover.sh
+./recover.sh <ops_ip> <password>                           # 只恢复 ops
+./recover.sh <ops_ip> <password> <prod_ip> <prod_password> # 恢复 ops + prod
 ```
 
-### 4. 一键部署
+## SSH 私钥备份
+
+**重要**: SSH 私钥 `~/.ssh/id_ed25519` 是解密 secrets 的唯一密钥，必须安全备份！
 
 ```bash
-cd ~/ansible/k3s
+# 备份到 R2
+rclone copy ~/.ssh/id_ed25519 r2:hbf-backup/keys/
 
-# 运行全部 playbook
-ansible-playbook -i inventory.yml site.yml
+# 或者保存到安全的密码管理器
 ```
 
-或分步执行：
+## 场景说明
 
+### 场景1: Ops 机器故障
+
+完整重建控制面：
 ```bash
-# 1. 基础环境
-ansible-playbook -i inventory.yml playbooks/01-base.yml
+./local-recover.sh <prod_ip>  # 如果 prod 还在
+./local-recover.sh            # 如果只恢复 ops
+```
 
-# 2. WireGuard 组网
+### 场景2: Prod 机器故障
+
+Ops 还在，只需重新加入 prod：
+```bash
+cd ~/sub2api/deploy/ansible/k3s
+
+# 更新 inventory.yml 中的 prod IP
+vim inventory.yml
+
+# 只运行 prod 相关 playbook
+ansible-playbook -i inventory.yml playbooks/01-base.yml --limit prod
 ansible-playbook -i inventory.yml playbooks/02-wireguard.yml
-
-# 3. K3s Server
-ansible-playbook -i inventory.yml playbooks/03-k3s-server.yml
-
-# 4. K3s Agent
 ansible-playbook -i inventory.yml playbooks/04-k3s-agent.yml
-
-# 5. 监控栈
-ansible-playbook -i inventory.yml playbooks/05-monitoring.yml
-
-# 6. 堡垒机
-ansible-playbook -i inventory.yml playbooks/06-next-terminal.yml
-
-# 7. SSH 安全
-ansible-playbook -i inventory.yml playbooks/07-ssh-security.yml
-
-# 8. 运维门户 (Homarr + LLDAP)
-ansible-playbook -i inventory.yml playbooks/08-ops-portal.yml
 ```
 
-### 5. 从 R2 恢复数据（可选）
-
-如果需要恢复之前的数据：
+### 场景3: 新增 Prod 机器
 
 ```bash
-ansible-playbook -i inventory.yml playbooks/09-restore.yml
+# 编辑 inventory.yml 添加新节点
+vim inventory.yml
+
+# 部署新节点
+ansible-playbook -i inventory.yml playbooks/01-base.yml --limit <new_node>
+ansible-playbook -i inventory.yml playbooks/02-wireguard.yml
+ansible-playbook -i inventory.yml playbooks/04-k3s-agent.yml --limit <new_node>
+```
+
+## 恢复后验证
+
+```bash
+# 检查节点状态
+kubectl get nodes
+
+# 检查所有 Pod
+kubectl get pods -A
+
+# 检查服务
+curl -k https://ops.hbf.ink
 ```
 
 ## 访问信息
 
-部署完成后：
+| 服务 | 地址 | 认证 |
+|------|------|------|
+| 运维首页 | https://ops.hbf.ink | - |
+| Grafana | https://ops.hbf.ink/grafana | LDAP |
+| Next Terminal | https://ops.hbf.ink/terminal | LDAP |
+| LLDAP | https://ops.hbf.ink/lldap | 本地 |
 
-| 服务 | 地址 |
-|------|------|
-| 运维首页 | https://ops.hbf.ink |
-| LLDAP 用户管理 | https://ops.hbf.ink/lldap |
-| Grafana 监控 | https://ops.hbf.ink/grafana |
-| Next Terminal | https://ops.hbf.ink/terminal |
-
-## 密钥管理
-
-### 解密 secrets.enc.yml
-
-```bash
-# 需要 SSH 私钥 ~/.ssh/id_ed25519
-sops -d secrets.enc.yml
-```
-
-### 修改密钥后重新加密
-
-```bash
-sops secrets.enc.yml  # 直接编辑
-# 或
-sops -d secrets.enc.yml > secrets.yml
-# 编辑 secrets.yml
-sops -e secrets.yml > secrets.enc.yml
-rm secrets.yml
-```
+**LDAP 账号**: `calvinhong` (密码在 LLDAP 中管理，改一次全部生效)
 
 ## 故障排除
 
 ### SOPS 解密失败
-
-确保 SSH 私钥存在且权限正确：
 ```bash
-ls -la ~/.ssh/id_ed25519  # 应为 -rw-------
+# 确认私钥存在且权限正确
+ls -la ~/.ssh/id_ed25519  # 应该是 -rw-------
 ```
 
-### Ansible 连接失败
+### K3s 节点不加入
+```bash
+# 检查 WireGuard 连通性
+ping 10.10.0.1  # ops
+ping 10.10.0.2  # prod
 
-检查 inventory 中的 IP 和用户是否正确，SSH 密钥是否已添加到目标服务器。
+# 检查 K3s token
+cat /var/lib/rancher/k3s/server/node-token
+```
 
-### WireGuard 连接不通
-
-检查防火墙是否开放 51820/udp 端口。
+### 证书问题
+```bash
+# 重新签发证书
+kubectl delete secret ops-tls -n ops
+kubectl delete secret grafana-tls -n monitoring
+# 等待 cert-manager 自动重新签发
+```

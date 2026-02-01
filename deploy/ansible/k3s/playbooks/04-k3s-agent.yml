@@ -37,20 +37,26 @@
   hosts: ops
   become: yes
   tasks:
+    - name: 检查是否有 prod 节点
+      set_fact:
+        has_prod: "{{ groups['prod'] | default([]) | length > 0 }}"
+
     - name: 验证所有节点就绪
       shell: kubectl get nodes
       register: nodes_status
       retries: 30
       delay: 5
       until: "'Ready' in nodes_status.stdout"
+      when: has_prod
 
     - name: 获取 prod 节点名称
       shell: kubectl get nodes -l '!node-role' -o jsonpath='{.items[0].metadata.name}'
       register: prod_node_name
+      when: has_prod
 
     - name: 给 prod 节点打标签
       shell: kubectl label node {{ prod_node_name.stdout }} node-role=prod --overwrite
-      when: prod_node_name.stdout != ""
+      when: has_prod and prod_node_name.stdout != ""
 
     - name: 显示集群状态
       shell: kubectl get nodes -o wide
