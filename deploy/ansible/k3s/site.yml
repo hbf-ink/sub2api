@@ -27,5 +27,8 @@
 - name: SSH 安全加固
   import_playbook: playbooks/07-ssh-security.yml
 
-- name: Ingress 和自动 HTTPS
-  import_playbook: playbooks/08-ingress.yml
+- name: 运维门户 (Homarr + LLDAP)
+  import_playbook: playbooks/08-ops-portal.yml
+
+- name: 配置运维系统
+  import_playbook: playbooks/09-configure-services.yml

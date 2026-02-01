@@ -1,0 +1,429 @@
+---
+# 配置所有运维系统并打通
+# Grafana 数据源 + Next Terminal 资产 + Homarr 面板
+
+- name: 配置运维系统
+  hosts: ops
+  become: yes
+  vars:
+    ops_domain: "ops.hbf.ink"
+    secrets: "{{ lookup('community.sops.sops', playbook_dir + '/../secrets.enc.yml') | from_yaml }}"
+    prod_wg_ip: "10.10.0.2"
+    ops_wg_ip: "10.10.0.1"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    SOPS_AGE_SSH_PRIVATE_KEY_FILE: "{{ ansible_env.HOME }}/.ssh/id_ed25519"
+  tasks:
+    # ============ Grafana 配置 ============
+    - name: 获取 Grafana admin 密码
+      shell: kubectl get secret -n monitoring grafana -o jsonpath="{.data.admin-password}" | base64 -d
+      register: grafana_password
+
+    - name: 配置 Grafana 数据源
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: grafana-datasources
+          namespace: monitoring
+          labels:
+            grafana_datasource: "1"
+        data:
+          datasources.yaml: |
+            apiVersion: 1
+            datasources:
+              - name: Prometheus
+                type: prometheus
+                url: http://prometheus-server.monitoring.svc.cluster.local
+                access: proxy
+                isDefault: true
+              - name: Loki
+                type: loki
+                url: http://loki.monitoring.svc.cluster.local:3100
+                access: proxy
+              - name: Tempo
+                type: tempo
+                url: http://tempo.monitoring.svc.cluster.local:3100
+                access: proxy
+        EOF
+
+    - name: 重启 Grafana 加载数据源
+      shell: kubectl rollout restart deployment grafana -n monitoring
+
+    # ============ Next Terminal 配置 ============
+    - name: 等待 Next Terminal 就绪
+      shell: kubectl wait --for=condition=Ready pod -l app=next-terminal -n bastion --timeout=60s
+
+    - name: 获取 Next Terminal Pod
+      shell: kubectl get pod -n bastion -l app=next-terminal -o jsonpath='{.items[0].metadata.name}'
+      register: terminal_pod
+
+    # ============ Ingress 更新 - 统一入口 ============
+    - name: 更新 Ingress 添加所有服务路由
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: ops-ingress
+          namespace: ops
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+            traefik.ingress.kubernetes.io/router.middlewares: ops-strip-grafana@kubernetescrd,ops-strip-terminal@kubernetescrd,ops-strip-lldap@kubernetescrd
+        spec:
+          ingressClassName: traefik
+          tls:
+          - hosts:
+            - {{ ops_domain }}
+            secretName: ops-tls
+          rules:
+          - host: {{ ops_domain }}
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: homarr
+                    port:
+                      number: 7575
+        ---
+        # Grafana Ingress
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: grafana-ingress
+          namespace: monitoring
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+        spec:
+          ingressClassName: traefik
+          tls:
+          - hosts:
+            - {{ ops_domain }}
+            secretName: ops-tls-grafana
+          rules:
+          - host: {{ ops_domain }}
+            http:
+              paths:
+              - path: /grafana
+                pathType: Prefix
+                backend:
+                  service:
+                    name: grafana
+                    port:
+                      number: 80
+        ---
+        # Next Terminal Ingress
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: terminal-ingress
+          namespace: bastion
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+        spec:
+          ingressClassName: traefik
+          tls:
+          - hosts:
+            - {{ ops_domain }}
+            secretName: ops-tls-terminal
+          rules:
+          - host: {{ ops_domain }}
+            http:
+              paths:
+              - path: /terminal
+                pathType: Prefix
+                backend:
+                  service:
+                    name: next-terminal
+                    port:
+                      number: 8088
+        ---
+        # LLDAP Ingress
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: lldap-ingress
+          namespace: ops
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+        spec:
+          ingressClassName: traefik
+          tls:
+          - hosts:
+            - {{ ops_domain }}
+            secretName: ops-tls-lldap
+          rules:
+          - host: {{ ops_domain }}
+            http:
+              paths:
+              - path: /lldap
+                pathType: Prefix
+                backend:
+                  service:
+                    name: lldap
+                    port:
+                      number: 17170
+        EOF
+
+    # ============ Grafana 配置 root_url ============
+    - name: 配置 Grafana sub path
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: grafana-config
+          namespace: monitoring
+        data:
+          grafana.ini: |
+            [server]
+            root_url = https://{{ ops_domain }}/grafana
+            serve_from_sub_path = true
+            [auth.anonymous]
+            enabled = false
+            [security]
+            admin_user = admin
+        EOF
+
+    - name: 更新 Grafana Deployment 使用配置
+      shell: |
+        kubectl patch deployment grafana -n monitoring --type='json' -p='[
+          {"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts/-", "value": {"name": "grafana-config", "mountPath": "/etc/grafana/grafana.ini", "subPath": "grafana.ini"}},
+          {"op": "add", "path": "/spec/template/spec/volumes/-", "value": {"name": "grafana-config", "configMap": {"name": "grafana-config"}}}
+        ]' 2>/dev/null || echo "Already patched"
+
+    # ============ Homarr 配置文件 ============
+    - name: 创建 Homarr 配置
+      copy:
+        content: |
+          {
+            "schemaVersion": 1,
+            "configProperties": {
+              "name": "Sub2API Ops"
+            },
+            "categories": [],
+            "wrappers": [
+              {
+                "id": "default",
+                "position": 0
+              }
+            ],
+            "apps": [
+              {
+                "id": "grafana",
+                "name": "Grafana",
+                "url": "https://{{ ops_domain }}/grafana",
+                "behaviour": {
+                  "isOpeningNewTab": false,
+                  "externalUrl": ""
+                },
+                "network": {
+                  "enabledStatusChecker": true,
+                  "statusCodes": ["200"]
+                },
+                "appearance": {
+                  "iconUrl": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/grafana.png",
+                  "appNameStatus": "normal",
+                  "positionAppName": "column",
+                  "lineClampAppName": 1,
+                  "appNameFontSize": 16
+                },
+                "area": {
+                  "type": "wrapper",
+                  "properties": {
+                    "id": "default"
+                  }
+                },
+                "shape": {
+                  "md": { "location": { "x": 0, "y": 0 }, "size": { "width": 2, "height": 1 } },
+                  "lg": { "location": { "x": 0, "y": 0 }, "size": { "width": 2, "height": 1 } }
+                },
+                "integration": {
+                  "type": null,
+                  "properties": []
+                }
+              },
+              {
+                "id": "terminal",
+                "name": "Next Terminal",
+                "url": "https://{{ ops_domain }}/terminal",
+                "behaviour": {
+                  "isOpeningNewTab": false,
+                  "externalUrl": ""
+                },
+                "network": {
+                  "enabledStatusChecker": true,
+                  "statusCodes": ["200"]
+                },
+                "appearance": {
+                  "iconUrl": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/terminal.png",
+                  "appNameStatus": "normal",
+                  "positionAppName": "column",
+                  "lineClampAppName": 1,
+                  "appNameFontSize": 16
+                },
+                "area": {
+                  "type": "wrapper",
+                  "properties": {
+                    "id": "default"
+                  }
+                },
+                "shape": {
+                  "md": { "location": { "x": 2, "y": 0 }, "size": { "width": 2, "height": 1 } },
+                  "lg": { "location": { "x": 2, "y": 0 }, "size": { "width": 2, "height": 1 } }
+                },
+                "integration": {
+                  "type": null,
+                  "properties": []
+                }
+              },
+              {
+                "id": "lldap",
+                "name": "LLDAP",
+                "url": "https://{{ ops_domain }}/lldap",
+                "behaviour": {
+                  "isOpeningNewTab": false,
+                  "externalUrl": ""
+                },
+                "network": {
+                  "enabledStatusChecker": true,
+                  "statusCodes": ["200"]
+                },
+                "appearance": {
+                  "iconUrl": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/authelia.png",
+                  "appNameStatus": "normal",
+                  "positionAppName": "column",
+                  "lineClampAppName": 1,
+                  "appNameFontSize": 16
+                },
+                "area": {
+                  "type": "wrapper",
+                  "properties": {
+                    "id": "default"
+                  }
+                },
+                "shape": {
+                  "md": { "location": { "x": 4, "y": 0 }, "size": { "width": 2, "height": 1 } },
+                  "lg": { "location": { "x": 4, "y": 0 }, "size": { "width": 2, "height": 1 } }
+                },
+                "integration": {
+                  "type": null,
+                  "properties": []
+                }
+              },
+              {
+                "id": "prometheus",
+                "name": "Prometheus",
+                "url": "http://prometheus-server.monitoring.svc.cluster.local",
+                "behaviour": {
+                  "isOpeningNewTab": true,
+                  "externalUrl": ""
+                },
+                "network": {
+                  "enabledStatusChecker": true,
+                  "statusCodes": ["200"]
+                },
+                "appearance": {
+                  "iconUrl": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/prometheus.png",
+                  "appNameStatus": "normal",
+                  "positionAppName": "column",
+                  "lineClampAppName": 1,
+                  "appNameFontSize": 16
+                },
+                "area": {
+                  "type": "wrapper",
+                  "properties": {
+                    "id": "default"
+                  }
+                },
+                "shape": {
+                  "md": { "location": { "x": 0, "y": 1 }, "size": { "width": 2, "height": 1 } },
+                  "lg": { "location": { "x": 0, "y": 1 }, "size": { "width": 2, "height": 1 } }
+                },
+                "integration": {
+                  "type": null,
+                  "properties": []
+                }
+              },
+              {
+                "id": "loki",
+                "name": "Loki",
+                "url": "http://loki.monitoring.svc.cluster.local:3100",
+                "behaviour": {
+                  "isOpeningNewTab": true,
+                  "externalUrl": ""
+                },
+                "network": {
+                  "enabledStatusChecker": true,
+                  "statusCodes": ["200"]
+                },
+                "appearance": {
+                  "iconUrl": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/loki.png",
+                  "appNameStatus": "normal",
+                  "positionAppName": "column",
+                  "lineClampAppName": 1,
+                  "appNameFontSize": 16
+                },
+                "area": {
+                  "type": "wrapper",
+                  "properties": {
+                    "id": "default"
+                  }
+                },
+                "shape": {
+                  "md": { "location": { "x": 2, "y": 1 }, "size": { "width": 2, "height": 1 } },
+                  "lg": { "location": { "x": 2, "y": 1 }, "size": { "width": 2, "height": 1 } }
+                },
+                "integration": {
+                  "type": null,
+                  "properties": []
+                }
+              }
+            ],
+            "widgets": []
+          }
+        dest: /data/homarr/configs/default.json
+        mode: '0644'
+
+    - name: 重启 Homarr 加载配置
+      shell: kubectl rollout restart deployment homarr -n ops
+
+    # ============ 等待所有服务就绪 ============
+    - name: 等待 Grafana 就绪
+      shell: kubectl rollout status deployment grafana -n monitoring --timeout=120s
+
+    - name: 等待 Homarr 就绪
+      shell: kubectl rollout status deployment homarr -n ops --timeout=60s
+
+    # ============ 输出访问信息 ============
+    - name: 显示访问信息
+      shell: |
+        echo "==========================================="
+        echo "        运维系统配置完成"
+        echo "==========================================="
+        echo ""
+        echo "统一入口: https://{{ ops_domain }}"
+        echo ""
+        echo "--- 服务列表 ---"
+        echo "Homarr 首页:    https://{{ ops_domain }}"
+        echo "Grafana 监控:   https://{{ ops_domain }}/grafana"
+        echo "Next Terminal:  https://{{ ops_domain }}/terminal"
+        echo "LLDAP 用户管理: https://{{ ops_domain }}/lldap"
+        echo ""
+        echo "--- 账号信息 ---"
+        echo "Grafana:  admin / $(kubectl get secret -n monitoring grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
+        echo "LLDAP:    admin / {{ secrets.ops.lldap_admin_password }}"
+        echo "Terminal: admin / admin (首次登录需修改)"
+        echo ""
+        echo "--- 服务器 ---"
+        echo "运维机: {{ ops_wg_ip }} (WireGuard) / {{ ansible_host }}"
+        echo "业务机: {{ prod_wg_ip }} (WireGuard)"
+        echo "==========================================="
+      register: info
+
+    - name: 输出
+      debug:
+        var: info.stdout_lines
