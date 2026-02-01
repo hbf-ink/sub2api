@@ -2266,13 +2266,15 @@ func removeCacheControlFromThinkingBlocks(data map[string]any) {
 	}
 }
 
-
 // renameBlockedToolsForSetupToken 对于 setup-token 账号，重命名被 Anthropic 禁止的 tool 名称
+// 这些工具名称在使用 setup-token + claude-code header 时会被 Anthropic 拒绝
 func renameBlockedToolsForSetupToken(body []byte) []byte {
+	// 使用 gjson 检查是否有 tools
 	toolsResult := gjson.GetBytes(body, "tools")
 	if !toolsResult.Exists() || !toolsResult.IsArray() {
 		return body
 	}
+
 	modified := body
 	for i, tool := range toolsResult.Array() {
 		name := tool.Get("name").String()
@@ -2280,6 +2282,7 @@ func renameBlockedToolsForSetupToken(body []byte) []byte {
 			var err error
 			modified, err = sjson.SetBytes(modified, fmt.Sprintf("tools.%d.name", i), newName)
 			if err != nil {
+				// 修改失败则保持原样
 				continue
 			}
 		}
@@ -2288,6 +2291,7 @@ func renameBlockedToolsForSetupToken(body []byte) []byte {
 }
 
 // restoreBlockedToolNamesInResponse 在响应中还原被重命名的 tool 名称
+// 对于流式响应，需要对每个 chunk 调用此函数
 func restoreBlockedToolNamesInResponse(data []byte) []byte {
 	result := data
 	for newName, oldName := range claude.SetupTokenBlockedToolsReverse {
@@ -2331,13 +2335,15 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 	}
 
-	// setup-token 账号：重命名被禁止的 tool 名称
+	// setup-token 账号 + claude-code header：重命名被禁止的 tool 名称
 	// Anthropic 对 setup-token 有 tool 名称黑名单限制（如 read_file, read, write, bash）
 	needRestoreToolNames := false
-	if account.Type == AccountTypeSetupToken {
+	clientBeta := c.GetHeader("anthropic-beta")
+	if account.Type == AccountTypeSetupToken && strings.Contains(clientBeta, claude.BetaClaudeCode) {
 		body = renameBlockedToolsForSetupToken(body)
 		needRestoreToolNames = true
 	}
+	// 将标志存入 context，供响应处理时使用
 	ctx = context.WithValue(ctx, ctxkey.NeedRestoreToolNames, needRestoreToolNames)
 
 	// 获取凭证
@@ -2803,15 +2809,12 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// 处理anthropic-beta header（OAuth账号需要特殊处理）
 	if tokenType == "oauth" {
 		clientBeta := c.GetHeader("anthropic-beta")
-		// setup-token 账号：确保包含 claude-code header
-		if account.Type == AccountTypeSetupToken && !strings.Contains(clientBeta, claude.BetaClaudeCode) {
-			if clientBeta != "" {
-				clientBeta = claude.BetaClaudeCode + "," + clientBeta
-			} else {
-				clientBeta = claude.BetaClaudeCode
-			}
+		// setup-token 账号：如果客户端传了包含 claude-code 的 beta header，直接使用（不添加 oauth header）
+		if account.Type == AccountTypeSetupToken && strings.Contains(clientBeta, claude.BetaClaudeCode) {
+			req.Header.Set("anthropic-beta", clientBeta)
+		} else {
+			req.Header.Set("anthropic-beta", s.getBetaHeader(modelID, clientBeta))
 		}
-		req.Header.Set("anthropic-beta", s.getBetaHeader(modelID, clientBeta))
 	} else if s.cfg != nil && s.cfg.Gateway.InjectBetaForAPIKey && req.Header.Get("anthropic-beta") == "" {
 		// API-key：仅在请求显式使用 beta 特性且客户端未提供时，按需补齐（默认关闭）
 		if requestNeedsBetaFeatures(body) {
@@ -3460,6 +3463,11 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 		body = restoreBlockedToolNamesInResponse(body)
 	}
 
+	// setup-token 账号：还原被重命名的 tool 名称
+	if needRestore, _ := ctx.Value(ctxkey.NeedRestoreToolNames).(bool); needRestore {
+		body = restoreBlockedToolNamesInResponse(body)
+	}
+
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.cfg.Security.ResponseHeaders)
 
 	contentType := "application/json"
@@ -3853,7 +3861,13 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 
 	// OAuth 账号：处理 anthropic-beta header
 	if tokenType == "oauth" {
-		req.Header.Set("anthropic-beta", s.getBetaHeader(modelID, c.GetHeader("anthropic-beta")))
+		clientBeta := c.GetHeader("anthropic-beta")
+		// setup-token 账号：如果客户端传了包含 claude-code 的 beta header，直接使用（不添加 oauth header）
+		if account.Type == AccountTypeSetupToken && strings.Contains(clientBeta, claude.BetaClaudeCode) {
+			req.Header.Set("anthropic-beta", clientBeta)
+		} else {
+			req.Header.Set("anthropic-beta", s.getBetaHeader(modelID, clientBeta))
+		}
 	} else if s.cfg != nil && s.cfg.Gateway.InjectBetaForAPIKey && req.Header.Get("anthropic-beta") == "" {
 		// API-key：与 messages 同步的按需 beta 注入（默认关闭）
 		if requestNeedsBetaFeatures(body) {

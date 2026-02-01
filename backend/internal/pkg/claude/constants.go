@@ -81,6 +81,8 @@ func DefaultModelIDs() []string {
 const DefaultTestModel = "claude-sonnet-4-5-20250929"
 
 // SetupToken 账号被 Anthropic 禁止的 tool 名称映射
+// 这些工具名称在使用 setup-token 时会被 Anthropic 拒绝
+// 我们需要在请求时重命名，响应时还原
 var SetupTokenBlockedTools = map[string]string{
 	"read_file": "HubBF_read_file",
 	"read":      "HubBF_read",
@@ -88,7 +90,7 @@ var SetupTokenBlockedTools = map[string]string{
 	"bash":      "HubBF_bash",
 }
 
-// SetupTokenBlockedToolsReverse 反向映射
+// SetupTokenBlockedToolsReverse 反向映射，用于响应还原
 var SetupTokenBlockedToolsReverse = func() map[string]string {
 	m := make(map[string]string)
 	for k, v := range SetupTokenBlockedTools {

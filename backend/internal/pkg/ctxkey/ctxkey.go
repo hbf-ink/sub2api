@@ -18,6 +18,7 @@ const (
 	IsClaudeCodeClient Key = "ctx_is_claude_code_client"
 	// Group 认证后的分组信息，由 API Key 认证中间件设置
 	Group Key = "ctx_group"
-	// NeedRestoreToolNames 标记是否需要在响应中还原被重命名的 tool 名称
-	NeedRestoreToolNames Key = "need_restore_tool_names"
+	// NeedRestoreToolNames 标识响应中是否需要还原被重命名的 tool 名称
+	// 用于 setup-token 账号处理 Anthropic 的 tool 名称黑名单
+	NeedRestoreToolNames Key = "ctx_need_restore_tool_names"
 )
