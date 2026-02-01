@@ -135,9 +135,23 @@
                 - containerPort: 7575
                 env:
                 - name: SECRET_ENCRYPTION_KEY
-                  value: "{{ secrets.ops.homarr_secret_key | default(lookup('pipe', 'openssl rand -hex 32')) }}"
+                  value: "{{ secrets.ops.homarr_secret_key }}"
                 - name: AUTH_SECRET
-                  value: "{{ secrets.ops.homarr_auth_secret | default(lookup('pipe', 'openssl rand -hex 32')) }}"
+                  value: "{{ secrets.ops.homarr_auth_secret }}"
+                - name: AUTH_PROVIDERS
+                  value: "ldap"
+                - name: AUTH_LDAP_URI
+                  value: "ldap://lldap.ops.svc.cluster.local:3890"
+                - name: AUTH_LDAP_BASE
+                  value: "dc=ops,dc=hbf,dc=ink"
+                - name: AUTH_LDAP_BIND_DN
+                  value: "uid=admin,ou=people,dc=ops,dc=hbf,dc=ink"
+                - name: AUTH_LDAP_BIND_PASSWORD
+                  value: "{{ secrets.ops.lldap_admin_password }}"
+                - name: AUTH_LDAP_USERNAME_ATTRIBUTE
+                  value: "uid"
+                - name: AUTH_LDAP_USER_MAIL_ATTRIBUTE
+                  value: "mail"
                 volumeMounts:
                 - name: data
                   mountPath: /appdata
