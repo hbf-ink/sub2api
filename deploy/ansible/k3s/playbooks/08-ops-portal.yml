@@ -130,9 +130,12 @@
             spec:
               containers:
               - name: homarr
-                image: ghcr.io/ajnart/homarr:latest
+                image: ghcr.io/homarr-labs/homarr:v1.50.1
                 ports:
                 - containerPort: 7575
+                env:
+                - name: DISABLE_UPGRADE_MODAL
+                  value: "true"
                 volumeMounts:
                 - name: data
                   mountPath: /appdata
