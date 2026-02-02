@@ -1,4 +1,0 @@
-# SOPS 配置文件 - 使用 SSH ed25519 密钥
-creation_rules:
-  - path_regex: .*
-    age: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINKMD8lPcHsMv/SBryWWUOtOSDdn/n3qmxrjqDLPf0CJ
