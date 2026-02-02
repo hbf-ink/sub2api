@@ -102,20 +102,29 @@ spec:
         ports:
         - containerPort: 9091
         env:
-        - name: AUTHELIA_JWT_SECRET_FILE
-          value: /secrets/JWT_SECRET
-        - name: AUTHELIA_SESSION_SECRET_FILE
-          value: /secrets/SESSION_SECRET
-        - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
-          value: /secrets/STORAGE_ENCRYPTION_KEY
-        - name: AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD_FILE
-          value: /secrets/LDAP_PASSWORD
+        - name: AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: authelia-secrets
+              key: JWT_SECRET
+        - name: AUTHELIA_SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: authelia-secrets
+              key: SESSION_SECRET
+        - name: AUTHELIA_STORAGE_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: authelia-secrets
+              key: STORAGE_ENCRYPTION_KEY
+        - name: AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: authelia-secrets
+              key: LDAP_PASSWORD
         volumeMounts:
         - name: config
           mountPath: /config
-          readOnly: true
-        - name: secrets
-          mountPath: /secrets
           readOnly: true
         - name: data
           mountPath: /data
@@ -123,9 +132,6 @@ spec:
       - name: config
         configMap:
           name: authelia-config
-      - name: secrets
-        secret:
-          secretName: authelia-secrets
       - name: data
         persistentVolumeClaim:
           claimName: authelia-data

@@ -31,12 +31,14 @@ data:
       addr: 0.0.0.0:8088
     db:
       type: sqlite
-      file: data/sqlite/next-terminal.db
+      file: /usr/local/next-terminal/data/sqlite/next-terminal.db
     guacd:
       hostname: guacd
       port: 4822
     recording:
-      path: data/recording
+      path: /usr/local/next-terminal/data/recording
+    assets:
+      path: /usr/local/next-terminal/data/assets
 ---
 apiVersion: apps/v1
 kind: Deployment
