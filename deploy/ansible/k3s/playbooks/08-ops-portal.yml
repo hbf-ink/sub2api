@@ -7,7 +7,10 @@
   become: yes
   vars:
     ops_domain: "ops.hbf.ink"
-    acme_email: "calvinaistudio@gmail.com"
+    acme_email: "calvin@hbf.ink"
+    admin_user: "calvinhong"
+    admin_email: "calvin@hbf.ink"
+    ldap_base_dn: "dc=ops,dc=hbf,dc=ink"
     secrets: "{{ lookup('community.sops.sops', playbook_dir + '/../secrets.enc.yml') | from_yaml }}"
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
@@ -61,7 +64,11 @@
                   name: web
                 env:
                 - name: LLDAP_LDAP_BASE_DN
-                  value: "dc=ops,dc=hbf,dc=ink"
+                  value: "{{ ldap_base_dn }}"
+                - name: LLDAP_LDAP_USER_DN
+                  value: "{{ admin_user }}"
+                - name: LLDAP_LDAP_USER_EMAIL
+                  value: "{{ admin_email }}"
                 - name: LLDAP_JWT_SECRET
                   valueFrom:
                     secretKeyRef:
@@ -143,15 +150,23 @@
                 - name: AUTH_LDAP_URI
                   value: "ldap://lldap.ops.svc.cluster.local:3890"
                 - name: AUTH_LDAP_BASE
-                  value: "dc=ops,dc=hbf,dc=ink"
+                  value: "{{ ldap_base_dn }}"
                 - name: AUTH_LDAP_BIND_DN
-                  value: "uid=admin,ou=people,dc=ops,dc=hbf,dc=ink"
+                  value: "uid={{ admin_user }},ou=people,{{ ldap_base_dn }}"
                 - name: AUTH_LDAP_BIND_PASSWORD
                   value: "{{ secrets.ops.lldap_admin_password }}"
                 - name: AUTH_LDAP_USERNAME_ATTRIBUTE
                   value: "uid"
                 - name: AUTH_LDAP_USER_MAIL_ATTRIBUTE
                   value: "mail"
+                - name: AUTH_LDAP_GROUP_CLASS
+                  value: "groupOfUniqueNames"
+                - name: AUTH_LDAP_GROUP_MEMBER_ATTRIBUTE
+                  value: "member"
+                - name: AUTH_LDAP_GROUP_MEMBER_USER_ATTRIBUTE
+                  value: "dn"
+                - name: AUTH_LDAP_SEARCH_SCOPE
+                  value: "sub"
                 volumeMounts:
                 - name: data
                   mountPath: /appdata
@@ -233,6 +248,30 @@
           externalName: next-terminal.bastion.svc.cluster.local
         EOF
 
+    - name: 创建 StripPrefix 中间件
+      shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: traefik.io/v1alpha1
+        kind: Middleware
+        metadata:
+          name: strip-lldap
+          namespace: ops
+        spec:
+          stripPrefix:
+            prefixes:
+              - /lldap
+        ---
+        apiVersion: traefik.io/v1alpha1
+        kind: Middleware
+        metadata:
+          name: strip-terminal
+          namespace: ops
+        spec:
+          stripPrefix:
+            prefixes:
+              - /terminal
+        EOF
+
     - name: 部署 Ingress
       shell: |
         cat <<'EOF' | kubectl apply -f -
@@ -260,13 +299,6 @@
                     name: homarr
                     port:
                       number: 7575
-              - path: /lldap
-                pathType: Prefix
-                backend:
-                  service:
-                    name: lldap
-                    port:
-                      number: 17170
               - path: /grafana
                 pathType: Prefix
                 backend:
@@ -274,6 +306,51 @@
                     name: grafana-external
                     port:
                       number: 80
+        ---
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: lldap-ingress
+          namespace: ops
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+            traefik.ingress.kubernetes.io/router.middlewares: ops-strip-lldap@kubernetescrd
+        spec:
+          ingressClassName: traefik
+          tls:
+          - hosts:
+            - {{ ops_domain }}
+            secretName: ops-tls
+          rules:
+          - host: {{ ops_domain }}
+            http:
+              paths:
+              - path: /lldap
+                pathType: Prefix
+                backend:
+                  service:
+                    name: lldap
+                    port:
+                      number: 17170
+        ---
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: terminal-ingress
+          namespace: ops
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+            traefik.ingress.kubernetes.io/router.middlewares: ops-strip-terminal@kubernetescrd
+        spec:
+          ingressClassName: traefik
+          tls:
+          - hosts:
+            - {{ ops_domain }}
+            secretName: ops-tls
+          rules:
+          - host: {{ ops_domain }}
+            http:
+              paths:
               - path: /terminal
                 pathType: Prefix
                 backend:
@@ -291,13 +368,112 @@
       retries: 3
       delay: 10
 
+    # ============ 配置 Homarr LDAP ============
+    - name: 等待 Homarr 数据库初始化
+      shell: |
+        for i in {1..30}; do
+          if [ -f /data/homarr/db/db.sqlite ]; then
+            echo "Database ready"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "Database not found"
+        exit 1
+
+    - name: 检查 Homarr onboarding 状态
+      shell: |
+        sqlite3 /data/homarr/db/db.sqlite "SELECT step FROM onboarding LIMIT 1;"
+      register: homarr_onboarding_status
+      changed_when: false
+
+    - name: 配置 Homarr 跳过 onboarding 并设置 LDAP 管理员组
+      shell: |
+        # 停止 Homarr 以便修改数据库
+        kubectl scale deployment/homarr -n ops --replicas=0
+        sleep 3
+        
+        # 确保数据库可写
+        chmod 777 /data/homarr/db
+        chmod 666 /data/homarr/db/db.sqlite
+        
+        DB=/data/homarr/db/db.sqlite
+        
+        # 设置 onboarding 为完成状态
+        sqlite3 $DB "UPDATE onboarding SET step = 'finish';"
+        
+        # 创建与 LLDAP 同名的管理员组 (lldap_admin)
+        sqlite3 $DB "INSERT OR IGNORE INTO \"group\" (id, name, position) VALUES ('lldap_admin_group', 'lldap_admin', 0);"
+        
+        # 给组赋予所有管理员权限
+        sqlite3 $DB "INSERT OR IGNORE INTO groupPermission (group_id, permission) VALUES 
+        ('lldap_admin_group', 'admin'),
+        ('lldap_admin_group', 'board-create'),
+        ('lldap_admin_group', 'board-full-all'),
+        ('lldap_admin_group', 'integration-create'),
+        ('lldap_admin_group', 'integration-full-all'),
+        ('lldap_admin_group', 'integration-use-all');"
+        
+        # 创建默认 board
+        sqlite3 $DB "INSERT OR IGNORE INTO board (id, name, is_public, page_title, meta_title, primary_color, secondary_color, opacity) VALUES 
+        ('ops_board', 'Ops Dashboard', 1, 'HBF Ops', 'HBF Ops', '#fa5252', '#fd7e14', 100);"
+        
+        # 创建 layout
+        sqlite3 $DB "INSERT OR IGNORE INTO layout (id, name, board_id, column_count, breakpoint) VALUES 
+        ('layout_default', 'default', 'ops_board', 10, 0);"
+        
+        # 创建 apps
+        sqlite3 $DB "INSERT OR IGNORE INTO app (id, name, icon_url, href, description) VALUES 
+        ('app_grafana', 'Grafana', 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/grafana.svg', 'https://{{ ops_domain }}/grafana', '监控仪表盘'),
+        ('app_prometheus', 'Prometheus', 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/prometheus.svg', 'https://{{ ops_domain }}/grafana/explore?orgId=1&left=%7B%22datasource%22:%22prometheus%22%7D', '指标查询'),
+        ('app_loki', 'Loki', 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/loki.svg', 'https://{{ ops_domain }}/grafana/explore?orgId=1&left=%7B%22datasource%22:%22loki%22%7D', '日志查询'),
+        ('app_tempo', 'Tempo', 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/grafana.svg', 'https://{{ ops_domain }}/grafana/explore?orgId=1&left=%7B%22datasource%22:%22tempo%22%7D', '链路追踪'),
+        ('app_alertmanager', 'Alertmanager', 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/prometheus.svg', 'https://{{ ops_domain }}/grafana/alerting/list', '告警管理'),
+        ('app_lldap', 'LLDAP', 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/lldap.svg', 'https://{{ ops_domain }}/lldap', '用户管理'),
+        ('app_terminal', 'Next Terminal', 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/apache-guacamole.svg', 'https://{{ ops_domain }}/terminal', '堡垒机');"
+        
+        # 创建 section (kind=empty 不可折叠)
+        sqlite3 $DB "INSERT OR IGNORE INTO section (id, board_id, kind, x_offset, y_offset, name) VALUES 
+        ('section_monitor', 'ops_board', 'empty', 0, 0, '监控'),
+        ('section_manage', 'ops_board', 'empty', 0, 3, '管理');"
+        
+        # 创建 item (关联 board 和 app)
+        sqlite3 $DB "INSERT OR IGNORE INTO item (id, board_id, kind, options, advanced_options) VALUES 
+        ('item_grafana', 'ops_board', 'app', '{\"json\":{\"appId\":\"app_grafana\"}}', '{\"json\":{}}'),
+        ('item_prometheus', 'ops_board', 'app', '{\"json\":{\"appId\":\"app_prometheus\"}}', '{\"json\":{}}'),
+        ('item_loki', 'ops_board', 'app', '{\"json\":{\"appId\":\"app_loki\"}}', '{\"json\":{}}'),
+        ('item_tempo', 'ops_board', 'app', '{\"json\":{\"appId\":\"app_tempo\"}}', '{\"json\":{}}'),
+        ('item_alertmanager', 'ops_board', 'app', '{\"json\":{\"appId\":\"app_alertmanager\"}}', '{\"json\":{}}'),
+        ('item_lldap', 'ops_board', 'app', '{\"json\":{\"appId\":\"app_lldap\"}}', '{\"json\":{}}'),
+        ('item_terminal', 'ops_board', 'app', '{\"json\":{\"appId\":\"app_terminal\"}}', '{\"json\":{}}');"
+        
+        # 创建 item_layout (关联 item, section, layout)
+        sqlite3 $DB "INSERT OR IGNORE INTO item_layout (item_id, section_id, layout_id, x_offset, y_offset, width, height) VALUES 
+        ('item_grafana', 'section_monitor', 'layout_default', 0, 0, 2, 2),
+        ('item_prometheus', 'section_monitor', 'layout_default', 2, 0, 2, 2),
+        ('item_loki', 'section_monitor', 'layout_default', 4, 0, 2, 2),
+        ('item_tempo', 'section_monitor', 'layout_default', 6, 0, 2, 2),
+        ('item_alertmanager', 'section_monitor', 'layout_default', 8, 0, 2, 2),
+        ('item_lldap', 'section_manage', 'layout_default', 0, 0, 2, 2),
+        ('item_terminal', 'section_manage', 'layout_default', 2, 0, 2, 2);"
+        
+        # 设置默认 board
+        sqlite3 $DB "UPDATE serverSetting SET value = '{\"json\":{\"homeBoardId\":\"ops_board\",\"mobileHomeBoardId\":\"ops_board\",\"enableStatusByDefault\":true,\"forceDisableStatus\":false}}' WHERE setting_key = 'board';"
+        
+        # 重启 Homarr
+        kubectl scale deployment/homarr -n ops --replicas=1
+        kubectl wait --for=condition=Ready pod -l app=homarr -n ops --timeout=120s
+        
+        echo "Homarr LDAP 配置完成"
+      when: homarr_onboarding_status.stdout != 'finish'
+
     - name: 显示状态
       shell: |
         echo "=== Pods ===" && kubectl get pods -n ops
         echo "=== Ingress ===" && kubectl get ingress -n ops
         echo ""
         echo "访问: https://{{ ops_domain }}"
-        echo "LLDAP: https://{{ ops_domain }}/lldap (admin / {{ secrets.ops.lldap_admin_password }})"
+        echo "LLDAP: https://{{ ops_domain }}/lldap ({{ admin_user }} / {{ secrets.ops.lldap_admin_password }})"
       register: status
 
     - name: 输出

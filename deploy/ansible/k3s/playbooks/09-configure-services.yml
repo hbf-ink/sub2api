@@ -19,48 +19,10 @@
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
     SOPS_AGE_SSH_PRIVATE_KEY_FILE: "{{ ansible_env.HOME }}/.ssh/id_ed25519"
   tasks:
-    # ============ LLDAP 创建用户 ============
+    # ============ LLDAP 等待就绪 ============
+    # 管理员用户 calvinhong 在 LLDAP 部署时通过环境变量创建
     - name: 等待 LLDAP 就绪
       shell: kubectl wait --for=condition=Ready pod -l app=lldap -n ops --timeout=120s
-
-    - name: 获取 LLDAP Pod
-      shell: kubectl get pod -n ops -l app=lldap -o jsonpath='{.items[0].metadata.name}'
-      register: lldap_pod
-
-    - name: 创建管理员用户 calvinhong
-      shell: |
-        # 获取 JWT token
-        TOKEN=$(kubectl exec -n ops {{ lldap_pod.stdout }} -- \
-          curl -s -X POST http://localhost:17170/auth/simple/login \
-          -H "Content-Type: application/json" \
-          -d '{"username": "admin", "password": "{{ secrets.ops.lldap_admin_password }}"}' \
-          | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-        
-        if [ -n "$TOKEN" ]; then
-          # 创建用户
-          kubectl exec -n ops {{ lldap_pod.stdout }} -- \
-            curl -s -X POST http://localhost:17170/api/graphql \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $TOKEN" \
-            -d '{"query": "mutation { createUser(user: {id: \"{{ admin_user }}\", email: \"{{ admin_email }}\", displayName: \"Calvin Hong\"}) { id } }"}' 2>/dev/null || true
-          
-          # 设置密码
-          kubectl exec -n ops {{ lldap_pod.stdout }} -- \
-            curl -s -X POST http://localhost:17170/api/graphql \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $TOKEN" \
-            -d '{"query": "mutation { updateUser(user: {id: \"{{ admin_user }}\", password: \"{{ secrets.ops.lldap_admin_password }}\"}) { ok } }"}' 2>/dev/null || true
-          
-          # 添加到 lldap_admin 组
-          kubectl exec -n ops {{ lldap_pod.stdout }} -- \
-            curl -s -X POST http://localhost:17170/api/graphql \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $TOKEN" \
-            -d '{"query": "mutation { addUserToGroup(userId: \"{{ admin_user }}\", groupId: 1) { ok } }"}' 2>/dev/null || true
-          
-          echo "用户 {{ admin_user }} 创建完成"
-        fi
-      register: lldap_result
 
     # ============ Grafana LDAP 配置 ============
     - name: 配置 Grafana LDAP
@@ -91,7 +53,7 @@
             port = {{ ldap_port }}
             use_ssl = false
             start_tls = false
-            bind_dn = "uid=admin,ou=people,{{ ldap_base_dn }}"
+            bind_dn = "uid={{ admin_user }},ou=people,{{ ldap_base_dn }}"
             bind_password = "{{ secrets.ops.lldap_admin_password }}"
             search_filter = "(uid=%s)"
             search_base_dns = ["ou=people,{{ ldap_base_dn }}"]
@@ -156,7 +118,7 @@
               Enabled: true
               Url: "ldap://{{ ldap_host }}:{{ ldap_port }}"
               BaseDn: "{{ ldap_base_dn }}"
-              BindDn: "uid=admin,ou=people,{{ ldap_base_dn }}"
+              BindDn: "uid={{ admin_user }},ou=people,{{ ldap_base_dn }}"
               BindPassword: "{{ secrets.ops.lldap_admin_password }}"
               UserFilter: "(uid={0})"
               AdminGroupDn: "cn=lldap_admin,ou=groups,{{ ldap_base_dn }}"

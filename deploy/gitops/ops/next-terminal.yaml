@@ -1,0 +1,112 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: next-terminal-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: guacd-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guacd
+  template:
+    metadata:
+      labels:
+        app: guacd
+    spec:
+      containers:
+      - name: guacd
+        image: guacamole/guacd:latest
+        ports:
+        - containerPort: 4822
+        volumeMounts:
+        - name: data
+          mountPath: /drive
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: guacd-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacd
+spec:
+  selector:
+    app: guacd
+  ports:
+  - port: 4822
+    targetPort: 4822
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: next-terminal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: next-terminal
+  template:
+    metadata:
+      labels:
+        app: next-terminal
+    spec:
+      containers:
+      - name: next-terminal
+        image: dushixiang/next-terminal:latest
+        ports:
+        - containerPort: 8088
+          name: web
+        - containerPort: 2022
+          name: ssh
+        env:
+        - name: GUACD_HOSTNAME
+          value: "guacd"
+        - name: GUACD_PORT
+          value: "4822"
+        - name: DB_TYPE
+          value: "sqlite"
+        volumeMounts:
+        - name: data
+          mountPath: /usr/local/next-terminal/data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: next-terminal-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: next-terminal
+spec:
+  selector:
+    app: next-terminal
+  ports:
+  - name: web
+    port: 8088
+    targetPort: 8088
+  - name: ssh
+    port: 2022
+    targetPort: 2022
