@@ -21,20 +21,7 @@ spec:
     requests:
       storage: 1Gi
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: next-terminal-config
-data:
-  config.yaml: |
-    server:
-      addr: 0.0.0.0:8088
-    db:
-      type: sqlite
-      file: /usr/local/next-terminal/data/sqlite/next-terminal.db
-    guacd:
-      hostname: guacd
-      port: 4822
+# Next Terminal 使用默认配置
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -127,18 +114,12 @@ spec:
           mountPath: /usr/local/next-terminal/data
         - name: assets
           mountPath: /usr/local/next-terminal/assets
-        - name: config
-          mountPath: /etc/next-terminal
-          readOnly: true
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: next-terminal-data
       - name: assets
         emptyDir: {}
-      - name: config
-        configMap:
-          name: next-terminal-config
 ---
 apiVersion: v1
 kind: Service
