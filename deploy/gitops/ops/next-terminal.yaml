@@ -21,7 +21,20 @@ spec:
     requests:
       storage: 1Gi
 ---
-# Next Terminal 使用环境变量配置，不需要 ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: next-terminal-config
+data:
+  config.yaml: |
+    server:
+      addr: 0.0.0.0:8088
+    db:
+      type: sqlite
+      file: /usr/local/next-terminal/data/sqlite/next-terminal.db
+    guacd:
+      hostname: guacd
+      port: 4822
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -95,17 +108,19 @@ spec:
           value: "guacd"
         - name: GUACD_PORT
           value: "4822"
-        - name: DB
-          value: "sqlite:///usr/local/next-terminal/data/sqlite/next-terminal.db"
-        - name: DATA_PATH
-          value: "/usr/local/next-terminal/data"
         volumeMounts:
         - name: data
           mountPath: /usr/local/next-terminal/data
+        - name: config
+          mountPath: /etc/next-terminal
+          readOnly: true
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: next-terminal-data
+      - name: config
+        configMap:
+          name: next-terminal-config
 ---
 apiVersion: v1
 kind: Service
