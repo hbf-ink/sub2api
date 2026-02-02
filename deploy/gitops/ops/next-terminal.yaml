@@ -97,15 +97,14 @@ spec:
         - |
           mkdir -p /usr/local/next-terminal/data/sqlite \
                    /usr/local/next-terminal/data/recording \
-                   /usr/local/next-terminal/data/assets \
-                   /usr/local/next-terminal/data/sessions \
-                   /usr/local/next-terminal/assets
+                   /usr/local/next-terminal/data/sessions
           chmod -R 777 /usr/local/next-terminal/data
-          chmod -R 777 /usr/local/next-terminal/assets 2>/dev/null || true
-          ls -la /usr/local/next-terminal/
+          chmod -R 777 /usr/local/next-terminal/assets
         volumeMounts:
         - name: data
           mountPath: /usr/local/next-terminal/data
+        - name: assets
+          mountPath: /usr/local/next-terminal/assets
       containers:
       - name: next-terminal
         image: dushixiang/next-terminal:latest
@@ -122,6 +121,8 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /usr/local/next-terminal/data
+        - name: assets
+          mountPath: /usr/local/next-terminal/assets
         - name: config
           mountPath: /etc/next-terminal
           readOnly: true
@@ -129,6 +130,8 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: next-terminal-data
+      - name: assets
+        emptyDir: {}
       - name: config
         configMap:
           name: next-terminal-config
