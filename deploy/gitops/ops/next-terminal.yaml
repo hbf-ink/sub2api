@@ -175,7 +175,7 @@ spec:
           mountPath: /usr/local/next-terminal/assets
       containers:
       - name: next-terminal
-        image: dushixiang/next-terminal:latest
+        image: dushixiang/next-terminal:v1.8.10
         ports:
         - containerPort: 8088
           name: web
