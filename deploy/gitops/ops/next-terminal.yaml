@@ -41,6 +41,8 @@ data:
     Guacd:
       Hostname: guacd
       Port: 4822
+    Assets:
+      Path: /usr/local/next-terminal/assets
 ---
 apiVersion: v1
 kind: Service
