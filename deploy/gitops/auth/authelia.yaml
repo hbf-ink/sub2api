@@ -119,8 +119,6 @@ spec:
           readOnly: true
         - name: data
           mountPath: /data
-        args:
-        - --config=/config/configuration.yml
       volumes:
       - name: config
         configMap:
