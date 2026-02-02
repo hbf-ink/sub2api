@@ -6,8 +6,8 @@ all:
     ops:
       hosts:
         ops-tokyo-01:
-          ansible_host: 43.163.241.60
-          ansible_password: nl(@zQ>~%rMRYt34^V
+          ansible_host: 43.163.210.42
+          ansible_password: y#AV(ZjOHNp0}9u>G7
           node_role: ops
           wireguard_ip: 10.10.0.1
     prod:
