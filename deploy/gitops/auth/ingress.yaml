@@ -6,7 +6,7 @@ metadata:
   name: authelia
 spec:
   forwardAuth:
-    address: http://authelia.auth.svc.cluster.local:9091/api/authz/forward-auth
+    address: http://authelia-svc.auth.svc.cluster.local:9091/api/authz/forward-auth
     trustForwardHeader: true
     authResponseHeaders:
       - Remote-User
@@ -55,7 +55,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: authelia
+            name: authelia-svc
             port:
               number: 9091
 ---
